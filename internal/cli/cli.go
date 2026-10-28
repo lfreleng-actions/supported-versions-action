@@ -41,7 +41,10 @@ const (
 	ExitOutOfRange = 5
 )
 
-const progName = "supported-versions"
+const (
+	progName   = "supported-versions"
+	cmdVersion = "version"
+)
 
 // Output formats.
 const (
@@ -211,6 +214,16 @@ func commands() map[string]command {
 			summary:  "regenerate the offline snapshot from the network",
 			run:      (*env).snapshotCmd,
 		},
+		cmdCatalog: {
+			synopsis: "catalog lint [--overlay] [FILE]",
+			summary:  "lint the embedded catalog and snapshot, a catalog FILE or an overlay FILE",
+			run:      (*env).catalogCmd,
+		},
+		cmdVersion: {
+			synopsis: cmdVersion,
+			summary:  "print the version",
+			run:      (*env).versionCmd,
+		},
 		"help": {
 			synopsis: "help [command]",
 			summary:  "show usage",
@@ -220,10 +233,11 @@ func commands() map[string]command {
 }
 
 // commandOrder is the order help lists the commands in.
-var commandOrder = []string{"matrix", "check", "list", "snapshot", "help"}
+var commandOrder = []string{"matrix", "check", "list", "snapshot", cmdCatalog, cmdVersion, "help"}
 
 func (e *env) dispatch(ctx context.Context, args []string, g *globals) error {
 	fs := newFlagSet(progName, g)
+	showVersion := fs.Bool(cmdVersion, false, "print the version")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return e.usage()
@@ -231,6 +245,12 @@ func (e *env) dispatch(ctx context.Context, args []string, g *globals) error {
 		return usagef("%v", err)
 	}
 	rest := fs.Args()
+	if *showVersion {
+		if len(rest) != 0 {
+			return usagef("--version takes no command")
+		}
+		return e.printVersion()
+	}
 	if len(rest) == 0 {
 		return usagef("no command given")
 	}
@@ -289,7 +309,7 @@ func (e *env) commandUsage(fs *flag.FlagSet) error {
 
 func (e *env) usage() error {
 	p := &printer{w: e.stdout}
-	p.printf("usage: %s [global flags] <command> [flags] [arguments]\n\ncommands:\n", progName)
+	p.printf("usage: %s [global flags] <command> [flags] [arguments]\n       %s --version\n\ncommands:\n", progName, progName)
 	cmds := commands()
 	for _, name := range commandOrder {
 		p.printf("  %-10s %s\n", name, cmds[name].summary)
