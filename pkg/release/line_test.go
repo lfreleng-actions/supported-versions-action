@@ -8,6 +8,9 @@ import "testing"
 // lineThreeTen is a minor line whose minor has two digits.
 const lineThreeTen = "3.10"
 
+// lineThreeNine sorts before lineThreeTen.
+const lineThreeNine = "3.9"
+
 func TestValidLine(t *testing.T) {
 	tests := []struct {
 		line, scheme string
@@ -39,8 +42,8 @@ func TestCompareLines(t *testing.T) {
 		a, b string
 		want int
 	}{
-		{"3.9", lineThreeTen, -1},
-		{lineThreeTen, "3.9", 1},
+		{lineThreeNine, lineThreeTen, -1},
+		{lineThreeTen, lineThreeNine, 1},
 		{lineThreeTen, lineThreeTen, 0},
 		{"9", "10", -1},
 		{"21", "21", 0},
