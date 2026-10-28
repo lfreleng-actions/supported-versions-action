@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -75,14 +76,11 @@ func decode(data []byte, schemaName string, out any) error {
 	if schemaErr != nil {
 		return schemaErr
 	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("parse %s: %w", schemaName, err)
+	doc, err := parseSingleDocument(data, schemaName)
+	if err != nil {
+		return err
 	}
-	if doc.Kind == 0 || len(doc.Content) == 0 {
-		return &FieldError{Path: rootPath, Message: "document is empty"}
-	}
-	value, err := yamlToJSON(doc.Content[0], nil)
+	value, err := yamlToJSON(doc, nil)
 	if err != nil {
 		return err
 	}
@@ -96,6 +94,32 @@ func decode(data []byte, schemaName string, out any) error {
 		return fmt.Errorf("decode %s: %w", schemaName, err)
 	}
 	return nil
+}
+
+// parseSingleDocument parses data as exactly one YAML document and
+// returns its root node. A second document, or trailing content that
+// does not parse, is an error rather than silently ignored.
+func parseSingleDocument(data []byte, schemaName string) (*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, &FieldError{Path: rootPath, Message: "document is empty"}
+		}
+		return nil, fmt.Errorf("parse %s: %w", schemaName, err)
+	}
+	if doc.Kind == 0 || len(doc.Content) == 0 {
+		return nil, &FieldError{Path: rootPath, Message: "document is empty"}
+	}
+	var extra yaml.Node
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		return doc.Content[0], nil
+	case err != nil:
+		return nil, fmt.Errorf("parse %s: trailing content after the first document: %w", schemaName, err)
+	default:
+		return nil, fieldErrorf(rootPath, "line %d: %s has a second YAML document; only one is allowed", extra.Line, schemaName)
+	}
 }
 
 // checkSchema validates a Go value, such as a catalog or overlay built

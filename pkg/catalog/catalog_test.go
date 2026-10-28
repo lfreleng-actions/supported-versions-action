@@ -17,6 +17,12 @@ import (
 
 const python = "python"
 
+// Fragments of the errors that reject content after the first document.
+const (
+	secondDocument  = "second YAML document"
+	trailingContent = "trailing content"
+)
+
 func TestEmbedded(t *testing.T) {
 	c, err := catalog.Embedded()
 	if err != nil {
@@ -101,6 +107,28 @@ func TestParseRejectsMalformedYAML(t *testing.T) {
 	} {
 		if _, err := catalog.Parse([]byte(data)); err == nil {
 			t.Errorf("%s: Parse succeeded", name)
+		}
+	}
+}
+
+// TestParseRejectsTrailingDocuments checks content after the first
+// YAML document is rejected rather than silently ignored.
+func TestParseRejectsTrailingDocuments(t *testing.T) {
+	valid, err := os.ReadFile(filepath.Join("testdata", "catalog", "valid.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		trailer string
+		want    string
+	}{
+		"second document": {"---\nschema: 1\ntools: {}\n", secondDocument},
+		"empty document":  {"---\n", secondDocument},
+		"malformed":       {"---\nschema: [1\n", trailingContent},
+	} {
+		_, err := catalog.Parse(append(slices.Clip(valid), tc.trailer...))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Parse = %v; want an error containing %q", name, err, tc.want)
 		}
 	}
 }
@@ -394,6 +422,26 @@ func TestApplyChecksCatalogSchema(t *testing.T) {
 	base.Tools["go"] = tool
 	_, err = base.Apply(&catalog.Overlay{Schema: 1, Tools: map[string]catalog.ToolOverlay{}})
 	assertErrorAt(t, err, "tools.go.policy.admit")
+}
+
+// TestParseOverlayRejectsTrailingDocuments checks policy changes in a
+// second overlay document are rejected rather than silently dropped.
+func TestParseOverlayRejectsTrailingDocuments(t *testing.T) {
+	for name, tc := range map[string]struct {
+		data string
+		want string
+	}{
+		"second document": {
+			"schema: 1\ntools: {}\n---\nschema: 1\ntools:\n  python:\n    policy: {floor: \"3.12\"}\n",
+			secondDocument,
+		},
+		"malformed": {"schema: 1\ntools: {}\n---\ntools: {python: [\n", trailingContent},
+	} {
+		_, err := catalog.ParseOverlay([]byte(tc.data))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ParseOverlay = %v; want an error containing %q", name, err, tc.want)
+		}
+	}
 }
 
 func TestLoadOverlay(t *testing.T) {
