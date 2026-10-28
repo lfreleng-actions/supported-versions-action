@@ -206,6 +206,11 @@ func commands() map[string]command {
 			summary:  "list the catalog, or the lines of one tool",
 			run:      (*env).list,
 		},
+		"snapshot": {
+			synopsis: "snapshot --write PATH",
+			summary:  "regenerate the offline snapshot from the network",
+			run:      (*env).snapshotCmd,
+		},
 		"help": {
 			synopsis: "help [command]",
 			summary:  "show usage",
@@ -215,7 +220,7 @@ func commands() map[string]command {
 }
 
 // commandOrder is the order help lists the commands in.
-var commandOrder = []string{"matrix", "check", "list", "help"}
+var commandOrder = []string{"matrix", "check", "list", "snapshot", "help"}
 
 func (e *env) dispatch(ctx context.Context, args []string, g *globals) error {
 	fs := newFlagSet(progName, g)
