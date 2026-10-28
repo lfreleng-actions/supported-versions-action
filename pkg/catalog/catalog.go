@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	catalogdata "github.com/lfreleng-actions/supported-versions-action/catalog"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 )
 
 // Catalog is a parsed and validated tool catalog.
@@ -149,9 +150,9 @@ type Policy struct {
 // Version schemes.
 const (
 	// SchemeMajor lines are a single number.
-	SchemeMajor = "major"
+	SchemeMajor = release.SchemeMajor
 	// SchemeMajorMinor lines are two dot-separated numbers.
-	SchemeMajorMinor = "major.minor"
+	SchemeMajorMinor = release.SchemeMajorMinor
 )
 
 // Policy rules.
