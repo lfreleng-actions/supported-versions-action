@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-// Package catalogdata embeds the tool catalog and its JSON Schema.
+// Package catalogdata embeds the tool catalog, its JSON Schema and the
+// offline snapshot of release facts.
 //
 // An embed directive cannot reach parent directories, so the data
-// files are embedded here, beside them, and pkg/catalog imports this
-// package to parse and validate them.
+// files are embedded here, beside them, and pkg/catalog and
+// pkg/snapshot import this package to parse and validate them.
+//
+// Run "go generate ./catalog" to regenerate snapshot.json from the
+// network.
 package catalogdata
+
+//go:generate go run ../internal/gensnapshot -o snapshot.json
 
 import _ "embed" // required by the //go:embed directives below
 
@@ -21,3 +27,10 @@ var Catalog []byte
 //
 //go:embed schema/catalog.schema.json
 var Schema []byte
+
+// Snapshot holds snapshot.json, the offline snapshot of the release
+// facts the catalog's sources returned when it was generated.
+// pkg/snapshot parses it; "go generate ./catalog" regenerates it.
+//
+//go:embed snapshot.json
+var Snapshot []byte
