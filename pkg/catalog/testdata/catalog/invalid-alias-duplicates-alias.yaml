@@ -1,0 +1,26 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: tools.other.aliases[0]
+
+schema: 1
+tools:
+  demo:
+    name: Demo
+    aliases: [dm]
+    version_scheme: major.minor
+    matrix_key: demo-version
+    sources:
+      - {type: endoflife, product: demo}
+    policy:
+      rule: all
+  other:
+    name: Other
+    aliases: [dm]
+    version_scheme: major
+    matrix_key: other-version
+    sources:
+      - {type: endoflife, product: demo}
+    policy:
+      rule: all

@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/catalog.schema.json",
+  "title": "supported-versions-action tool catalog",
+  "description": "Defines every tool once: its identity, where its release facts come from, how projects declare constraints on it, and the policy that selects its supported lines. Checks a schema cannot express (alias uniqueness, line formats, floor <= ceiling, field dependencies, compatibility references) are applied by pkg/catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "tools"],
+  "properties": {
+    "schema": {"const": 1},
+    "tools": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/tool"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "line": {
+      "description": "A release line; its format per version_scheme is checked by pkg/catalog.",
+      "type": "string",
+      "minLength": 1
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version_scheme", "matrix_key", "sources", "policy"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "aliases": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "version_scheme": {"enum": ["major", "major.minor"]},
+        "matrix_key": {"$ref": "#/$defs/id"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/source"}
+        },
+        "constraints": {"$ref": "#/$defs/constraints"},
+        "policy": {
+          "$ref": "#/$defs/policyFields",
+          "required": ["rule"]
+        },
+        "compatibility": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/line"},
+            "additionalProperties": {"$ref": "#/$defs/lineRange"}
+          }
+        }
+      }
+    },
+    "lineRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "min": {"$ref": "#/$defs/line"},
+        "max": {"$ref": "#/$defs/line"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": [
+            "endoflife",
+            "actions-manifest",
+            "adoptium",
+            "gradle-services",
+            "maven-metadata",
+            "rust-channel",
+            "github-releases",
+            "static"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "endoflife"}}},
+          "then": {
+            "additionalProperties": false,
+            "required": ["product"],
+            "properties": {
+              "type": true,
+              "product": {"$ref": "#/$defs/nonEmptyString"}
+            }
+          }
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"enum": ["actions-manifest", "github-releases"]}}},
+          "then": {
+            "additionalProperties": false,
+            "required": ["repository"],
+            "properties": {
+              "type": true,
+              "repository": {"$ref": "#/$defs/repository"}
+            }
+          }
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"enum": ["adoptium", "gradle-services", "rust-channel"]}}},
+          "then": {
+            "additionalProperties": false,
+            "properties": {
+              "type": true
+            }
+          }
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "maven-metadata"}}},
+          "then": {
+            "additionalProperties": false,
+            "required": ["artifact"],
+            "properties": {
+              "type": true,
+              "artifact": {
+                "type": "string",
+                "pattern": "^[^:\\s]+:[^:\\s]+$"
+              }
+            }
+          }
+        },
+        {
+          "if": {"required": ["type"], "properties": {"type": {"const": "static"}}},
+          "then": {
+            "additionalProperties": false,
+            "required": ["lines"],
+            "properties": {
+              "type": true,
+              "lines": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/staticLine"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "staticLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line"],
+      "properties": {
+        "line": {"$ref": "#/$defs/line"},
+        "released": {"$ref": "#/$defs/date"},
+        "eol": {"$ref": "#/$defs/date"},
+        "lts": {"type": "boolean"}
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "syntax": {
+          "enum": [
+            "pep440",
+            "go-directive",
+            "semver-range",
+            "semver-min",
+            "java-release",
+            "maven-range"
+          ]
+        },
+        "detect": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/detect"}
+        }
+      }
+    },
+    "detect": {
+      "description": "A file to inspect, plus at most one locator within it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "maxProperties": 2,
+      "properties": {
+        "file": {"$ref": "#/$defs/nonEmptyString"},
+        "field": {"$ref": "#/$defs/nonEmptyString"},
+        "classifiers": {"$ref": "#/$defs/nonEmptyString"},
+        "regex": {"$ref": "#/$defs/nonEmptyString"},
+        "directive": {"$ref": "#/$defs/nonEmptyString"},
+        "xpath": {"$ref": "#/$defs/nonEmptyString"},
+        "key": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "policyFields": {
+      "description": "Policy fields, none required; a catalog tool additionally requires rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule": {"enum": ["all", "lts", "latest"]},
+        "count": {"type": "integer", "minimum": 1},
+        "current": {"type": "boolean"},
+        "floor": {"$ref": "#/$defs/line"},
+        "ceiling": {"$ref": "#/$defs/line"},
+        "admit": {"enum": ["released", "installable", "explicit"]},
+        "prerelease": {"type": "boolean"},
+        "grace_days": {"type": "integer", "minimum": 0},
+        "eol_behaviour": {"enum": ["warn", "strip", "fail", "allow"]},
+        "warn_days_before_eol": {"type": "integer", "minimum": 0},
+        "labels": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        }
+      }
+    },
+    "overlay": {
+      "description": "A policy overlay: adjusts tools.<id>.policy fields of an existing catalog and nothing else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "tools"],
+      "properties": {
+        "schema": {"const": 1},
+        "tools": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["policy"],
+            "properties": {
+              "policy": {"$ref": "#/$defs/policyFields"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

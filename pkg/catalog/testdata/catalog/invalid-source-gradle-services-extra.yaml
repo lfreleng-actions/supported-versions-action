@@ -1,0 +1,16 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: tools.demo.sources[0].repository
+
+schema: 1
+tools:
+  demo:
+    name: Demo
+    version_scheme: major.minor
+    matrix_key: demo-version
+    sources:
+      - {type: gradle-services, repository: gradle/gradle}
+    policy:
+      rule: all

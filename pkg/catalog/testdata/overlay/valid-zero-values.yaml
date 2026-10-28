@@ -1,0 +1,11 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Zero values override: they are set, not omitted.
+schema: 1
+tools:
+  node:
+    policy: {current: false}
+  java:
+    policy: {grace_days: 0}
