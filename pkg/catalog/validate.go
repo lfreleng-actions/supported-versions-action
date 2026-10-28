@@ -4,19 +4,13 @@
 package catalog
 
 import (
-	"cmp"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
-)
 
-var linePatterns = map[string]*regexp.Regexp{
-	SchemeMajor:      regexp.MustCompile(`^(0|[1-9][0-9]*)$`),
-	SchemeMajorMinor: regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`),
-}
+	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
+)
 
 // validate applies the checks the JSON Schema cannot express and
 // returns every problem found, joined.
@@ -56,7 +50,7 @@ func (c *Catalog) check(excluded map[string]bool) []*FieldError {
 		base := "tools." + id
 		scheme := t.VersionScheme
 		checkLine := func(path, line, sch string) bool {
-			if !validLine(line, sch) {
+			if !release.ValidLine(line, sch) {
 				add(fieldErrorf(path, "%q is not a %s line", line, sch))
 				return false
 			}
@@ -100,7 +94,7 @@ func (c *Catalog) check(excluded map[string]bool) []*FieldError {
 				r := ranges[line]
 				minOK := r.Min == "" || checkLine(lp+".min", r.Min, otherTool.VersionScheme)
 				maxOK := r.Max == "" || checkLine(lp+".max", r.Max, otherTool.VersionScheme)
-				if r.Min != "" && r.Max != "" && minOK && maxOK && compareLines(r.Min, r.Max) > 0 {
+				if r.Min != "" && r.Max != "" && minOK && maxOK && release.CompareLines(r.Min, r.Max) > 0 {
 					add(fieldErrorf(lp+".min", "%q is above max %q", r.Min, r.Max))
 				}
 			}
@@ -124,38 +118,9 @@ func validatePolicy(p Policy, base, scheme string, checkLine func(path, line, sc
 	}
 	floorOK := p.Floor == "" || checkLine(base+".floor", p.Floor, scheme)
 	ceilingOK := p.Ceiling == "" || checkLine(base+".ceiling", p.Ceiling, scheme)
-	if p.Floor != "" && p.Ceiling != "" && floorOK && ceilingOK && compareLines(p.Floor, p.Ceiling) > 0 {
+	if p.Floor != "" && p.Ceiling != "" && floorOK && ceilingOK && release.CompareLines(p.Floor, p.Ceiling) > 0 {
 		add(fieldErrorf(base+".floor", "%q is above ceiling %q", p.Floor, p.Ceiling))
 	}
-}
-
-func validLine(line, scheme string) bool {
-	re, ok := linePatterns[scheme]
-	return ok && re.MatchString(line)
-}
-
-// compareLines compares two well-formed release lines numerically, so
-// that a minor of 9 sorts before a minor of 10. Components carry no
-// leading zeros, so comparing their digit strings by length and then
-// lexically orders them numerically at any size, with no overflow.
-func compareLines(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := 0; i < len(as) || i < len(bs); i++ {
-		x, y := "0", "0"
-		if i < len(as) {
-			x = as[i]
-		}
-		if i < len(bs) {
-			y = bs[i]
-		}
-		if c := cmp.Compare(len(x), len(y)); c != 0 {
-			return c
-		}
-		if c := strings.Compare(x, y); c != 0 {
-			return c
-		}
-	}
-	return 0
 }
 
 func sortedKeys[V any](m map[string]V) []string {
