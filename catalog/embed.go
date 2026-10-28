@@ -13,7 +13,7 @@
 // network.
 package catalogdata
 
-//go:generate go run ../internal/gensnapshot -o snapshot.json
+//go:generate go run ../cmd/supported-versions snapshot --write snapshot.json
 
 import _ "embed" // required by the //go:embed directives below
 
