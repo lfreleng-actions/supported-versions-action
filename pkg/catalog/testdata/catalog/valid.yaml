@@ -1,0 +1,128 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# A valid catalog using every source type, every constraint syntax and
+# detect locator, and a compatibility block.
+
+schema: 1
+
+tools:
+  python:
+    name: Python
+    aliases: [py]
+    version_scheme: major.minor
+    matrix_key: python-version
+    sources:
+      - {type: endoflife, product: python}
+      - {type: actions-manifest, repository: actions/python-versions}
+    constraints:
+      syntax: pep440
+      detect:
+        - {file: pyproject.toml, field: project.requires-python}
+        - {file: .python-version}
+    policy:
+      rule: all
+      floor: "3.9"
+      ceiling: "3.14"
+      admit: explicit
+
+  node:
+    name: Node.js
+    aliases: [nodejs]
+    version_scheme: major
+    matrix_key: node-version
+    sources:
+      - {type: github-releases, repository: nodejs/node}
+    constraints:
+      syntax: semver-range
+      detect:
+        - {file: package.json, field: engines.node}
+        - {file: .nvmrc}
+    policy:
+      rule: lts
+      current: true
+
+  java:
+    name: Java
+    version_scheme: major
+    matrix_key: java-version
+    sources:
+      - {type: adoptium}
+    constraints:
+      syntax: java-release
+      detect:
+        - {file: pom.xml, xpath: /project/properties/maven.compiler.release}
+    policy:
+      rule: lts
+      eol_behaviour: strip
+      grace_days: 30
+
+  maven:
+    name: Maven
+    version_scheme: major.minor
+    matrix_key: maven-version
+    sources:
+      - {type: maven-metadata, artifact: org.apache.maven:maven-core}
+    constraints:
+      syntax: maven-range
+      detect:
+        - {file: .mvn/wrapper/maven-wrapper.properties, key: distributionUrl}
+    policy:
+      rule: latest
+      count: 2
+    compatibility:
+      java:
+        "3.9": {min: "8"}
+        "4.0": {min: "17", max: "25"}
+
+  gradle:
+    name: Gradle
+    version_scheme: major
+    matrix_key: gradle-version
+    sources:
+      - {type: gradle-services}
+    constraints:
+      syntax: semver-min
+      detect:
+        - file: gradle/wrapper/gradle-wrapper.properties
+          regex: 'gradle-([0-9.]+)-'
+    policy:
+      rule: latest
+      count: 1
+      prerelease: true
+      warn_days_before_eol: 0
+
+  rust:
+    name: Rust
+    version_scheme: major.minor
+    matrix_key: toolchain
+    sources:
+      - {type: rust-channel}
+    constraints:
+      syntax: semver-min
+      detect:
+        - {file: Cargo.toml, field: package.rust-version}
+    policy:
+      rule: latest
+      count: 1
+      labels: [stable]
+
+  legacy:
+    name: Legacy
+    version_scheme: major.minor
+    matrix_key: legacy-version
+    sources:
+      - type: static
+        lines:
+          - {line: "1.9", released: 2020-01-15, eol: "2022-01-15"}
+          - {line: "1.10", released: "2021-06-01", lts: true}
+    constraints:
+      syntax: go-directive
+      detect:
+        - {file: go.mod, directive: go}
+        - {file: setup.cfg, classifiers: "Legacy :: {line}"}
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: allow

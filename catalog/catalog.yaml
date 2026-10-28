@@ -1,0 +1,55 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# The tool catalog: every tool is defined once, here. It holds policy
+# (floors, ceilings, rules) and where release facts come from; the
+# facts themselves are fetched at run time. schema/catalog.schema.json
+# defines the format and pkg/catalog applies the checks a schema cannot
+# express.
+
+schema: 1
+
+tools:
+  python:
+    name: Python
+    aliases: [cpython, python3, py]
+    version_scheme: major.minor
+    matrix_key: python-version
+    sources:
+      - {type: endoflife, product: python}
+      - {type: actions-manifest, repository: actions/python-versions}
+    constraints:
+      syntax: pep440
+      detect:
+        - {file: pyproject.toml, field: project.requires-python}
+        - {file: pyproject.toml, field: tool.poetry.dependencies.python}
+        - file: pyproject.toml
+          classifiers: "Programming Language :: Python :: {line}"
+        - {file: setup.cfg, field: options.python_requires}
+        - {file: setup.py, regex: 'python_requires\s*=\s*["'']([^"'']+)["'']'}
+        - {file: .python-version}
+    policy:
+      rule: all
+      floor: "3.11"
+      admit: installable
+      prerelease: false
+      eol_behaviour: warn
+      warn_days_before_eol: 90
+
+  go:
+    name: Go
+    aliases: [golang]
+    version_scheme: major.minor
+    matrix_key: go-version
+    sources:
+      - {type: endoflife, product: go}
+      - {type: actions-manifest, repository: actions/go-versions}
+    constraints:
+      syntax: go-directive
+      detect:
+        - {file: go.mod, directive: go}
+        - {file: go.mod, directive: toolchain}
+    policy:
+      rule: all
+      admit: installable

@@ -1,0 +1,10 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect Apply to fail at: tools.py
+
+schema: 1
+tools:
+  py:
+    policy: {floor: "3.12"}
