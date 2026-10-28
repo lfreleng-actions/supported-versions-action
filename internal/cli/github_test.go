@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"maps"
 	"net/http"
 	"os"
@@ -229,32 +230,48 @@ func TestGitHubEOLFail(t *testing.T) {
 	wantContains(t, "stdout", r.stdout, "::error::")
 }
 
-// TestGitHubLabelEqualsLine checks that a policy label equal to a
-// release line is dropped from supported_versions by its position
-// after the lines, and the line itself kept.
-func TestGitHubLabelEqualsLine(t *testing.T) {
+// TestGitHubLabelEqualsLineRejected checks an overlay label equal to
+// a release line is rejected before it can reach the matrix.
+func TestGitHubLabelEqualsLineRejected(t *testing.T) {
 	h := newHarness(t)
-	outPath, sumPath := githubEnv(t, h)
+	outPath, _ := githubEnv(t, h)
 	policyPath := filepath.Join(t.TempDir(), "overlay.yaml")
 	if err := os.WriteFile(policyPath,
 		[]byte("schema: 1\ntools:\n  python:\n    policy:\n      labels: [\"3.12\"]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := h.run("--policy", policyPath, formatGitHubFlag, cmdMatrix, toolPython)
-	r.want(t, ExitOK)
-	outs := parseOutputs(t, readFile(t, outPath))
-	if got := outs["matrix_json"]; got != `{"python-version":["3.11","3.12","3.13","3.14","3.15","3.12"]}` {
-		t.Errorf("matrix_json = %s", got)
+	r.want(t, ExitFailure)
+	wantContains(t, "stdout", r.stdout, "::error::tools.python.policy.labels[0]: ")
+	if _, err := os.Stat(outPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("GITHUB_OUTPUT written: %v", err)
 	}
-	if got := outs["supported_versions"]; got != "3.11 3.12 3.13 3.14 3.15" {
-		t.Errorf("supported_versions = %q", got)
+}
+
+// TestGitHubLabelEqualsLine checks that a label equal to a release
+// line, in a report the catalog checks never saw, is still dropped
+// from supported_versions by its position after the lines, and the
+// line itself kept.
+func TestGitHubLabelEqualsLine(t *testing.T) {
+	const line = "1.1"
+	rep := versions.Report{
+		Matrix: versions.Matrix{Key: "k", Versions: []string{"1.0", line, line}},
+		Policy: versions.PolicySummary{Labels: []string{line}},
 	}
-	if got := outs["eol_versions"]; got != "" {
-		t.Errorf("eol_versions = %q, want none", got)
+	outs, err := githubOutputs(rep)
+	if err != nil {
+		t.Fatal(err)
 	}
-	wantContains(t, "summary", readFile(t, sumPath),
-		"- **Matrix** (`python-version`): `3.11` `3.12` `3.13` `3.14` `3.15` `3.12`\n")
-	wantContains(t, "stdout", r.stdout, "matrix:  3.11 3.12 3.13 3.14 3.15 3.12\n")
+	got := map[string]string{}
+	for _, o := range outs {
+		got[o.name] = o.value
+	}
+	if got["matrix_json"] != `{"k":["1.0","1.1","1.1"]}` {
+		t.Errorf("matrix_json = %s", got["matrix_json"])
+	}
+	if got["supported_versions"] != "1.0 1.1" {
+		t.Errorf("supported_versions = %q", got["supported_versions"])
+	}
 }
 
 // runnerCommands returns the workflow commands the Actions runner
