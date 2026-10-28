@@ -137,7 +137,7 @@ type Policy struct {
 	Admit string `json:"admit"`
 	// Prerelease admits pre-release lines.
 	Prerelease bool `json:"prerelease"`
-	// GraceDays keeps a line for this many days after its EOL.
+	// GraceDays delays a newly released line by this many days.
 	GraceDays int `json:"grace_days"`
 	// EOLBehaviour decides what happens to an end-of-life line.
 	EOLBehaviour string `json:"eol_behaviour"` //nolint:misspell // field name fixed by the catalog format
@@ -175,12 +175,26 @@ const (
 	AdmitExplicit = "explicit"
 )
 
+// EOL behaviors.
+const (
+	// EOLAllow keeps an end-of-life line the policy names, silently.
+	EOLAllow = "allow"
+	// EOLWarn keeps an end-of-life line the policy names, with a
+	// warning.
+	EOLWarn = "warn"
+	// EOLStrip drops an end-of-life line the policy names, with a
+	// warning.
+	EOLStrip = "strip"
+	// EOLFail fails an evaluation that names an end-of-life line.
+	EOLFail = "fail"
+)
+
 // Policy defaults applied to fields a catalog omits.
 const (
 	// DefaultAdmit is the default Policy.Admit.
 	DefaultAdmit = AdmitInstallable
 	// DefaultEOLBehaviour is the default Policy.EOLBehaviour.
-	DefaultEOLBehaviour = "warn"
+	DefaultEOLBehaviour = EOLWarn
 	// DefaultWarnDaysBeforeEOL is the default Policy.WarnDaysBeforeEOL.
 	DefaultWarnDaysBeforeEOL = 90
 )
