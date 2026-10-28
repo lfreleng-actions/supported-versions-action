@@ -1,0 +1,10 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: tools.python.policy.minimum
+
+schema: 1
+tools:
+  python:
+    policy: {minimum: "3.12"}

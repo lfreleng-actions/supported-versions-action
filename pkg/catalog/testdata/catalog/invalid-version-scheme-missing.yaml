@@ -1,0 +1,15 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: tools.demo.version_scheme
+
+schema: 1
+tools:
+  demo:
+    name: Demo
+    matrix_key: demo-version
+    sources:
+      - {type: endoflife, product: demo}
+    policy:
+      rule: all

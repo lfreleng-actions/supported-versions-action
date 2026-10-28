@@ -1,0 +1,11 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: tools.python.sources
+
+schema: 1
+tools:
+  python:
+    sources:
+      - {type: endoflife, product: python}

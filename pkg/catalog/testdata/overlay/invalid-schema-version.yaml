@@ -1,0 +1,10 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Expect an error at: schema
+
+schema: 2
+tools:
+  python:
+    policy: {floor: "3.12"}
