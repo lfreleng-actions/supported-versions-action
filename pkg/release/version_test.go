@@ -46,6 +46,10 @@ func TestParse(t *testing.T) {
 			{"1.27.3", false},
 			{"go1.27.3", false},
 			{"1.27rc1", true},
+			{"go1.27rc1", true},
+			{"1.27beta1", true},
+			{"go1.27beta1", true},
+			{"1.27alpha1", true},
 		}},
 		// Node.js.
 		{SchemeMajor, "26", []spelling{
