@@ -40,8 +40,9 @@ var (
 	prereleaseSuffixes = []*regexp.Regexp{
 		// Hyphenated labels, optionally numbered: -rc, -rc.3, -rc-7.
 		regexp.MustCompile(`^(?i)-(?:rc|beta|alpha|milestone)(?:[.-]?[0-9]+)?$`),
-		// PEP 440 and Go labels directly after the numbers: rc1, b2, a1.
-		regexp.MustCompile(`^(?i)(?:a|b|rc)[0-9]*$`),
+		// PEP 440 and Go labels directly after the numbers: rc1, b2,
+		// a1, beta1, alpha1.
+		regexp.MustCompile(`^(?i)(?:alpha|beta|a|b|rc)[0-9]*$`),
 		// PEP 440 development releases: .dev1.
 		regexp.MustCompile(`^(?i)\.dev[0-9]*$`),
 		// Gradle nightlies: a hyphen and a 14-digit timestamp.
