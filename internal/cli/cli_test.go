@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// pythonMatrix is the Python matrix on the fixed clock.
+var pythonMatrix = []string{"3.11", "3.12", "3.13", "3.14", "3.15"}
+
 const (
 	flagFormat = "--format"
 	cmdMatrix  = "matrix"
@@ -60,7 +63,7 @@ func TestMatrixJSON(t *testing.T) {
 	r := h.run(cmdMatrix, flagFormat, formatJSON, toolPython)
 	r.want(t, ExitOK)
 	m := validReport(t, []byte(r.stdout))
-	if got := matrixOf(t, m); !slices.Equal(got, []string{"3.11", "3.12", "3.13", "3.14", "3.15"}) {
+	if got := matrixOf(t, m); !slices.Equal(got, pythonMatrix) {
 		t.Errorf("matrix = %v", got)
 	}
 }
@@ -69,7 +72,7 @@ func TestMatrixConstraint(t *testing.T) {
 	h := newHarness(t)
 	r := h.run(flagFormat, formatJSON, cmdMatrix, "--constraint", ">=3.12,<3.15", toolPython)
 	r.want(t, ExitOK)
-	if got := matrixOf(t, validReport(t, []byte(r.stdout))); !slices.Equal(got, []string{"3.12", "3.13", "3.14"}) {
+	if got := matrixOf(t, validReport(t, []byte(r.stdout))); !slices.Equal(got, pythonMatrix[1:4]) {
 		t.Errorf("matrix = %v, want 3.12 3.13 3.14", got)
 	}
 }

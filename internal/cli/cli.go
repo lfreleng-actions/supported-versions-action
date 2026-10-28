@@ -45,8 +45,9 @@ const progName = "supported-versions"
 
 // Output formats.
 const (
-	formatText = "text"
-	formatJSON = "json"
+	formatText   = "text"
+	formatJSON   = "json"
+	formatGitHub = "github"
 )
 
 // errNotSupported reports, under check --fail, a version that is not
@@ -110,7 +111,7 @@ func defaultGlobals() *globals {
 // value, so flags given before the command name survive the command's
 // own parse.
 func (g *globals) register(fs *flag.FlagSet) {
-	fs.StringVar(&g.format, "format", g.format, "output `FORMAT`: text or json")
+	fs.StringVar(&g.format, "format", g.format, "output `FORMAT`: text, json or github")
 	fs.StringVar(&g.policy, "policy", g.policy, "apply the policy overlay in local `FILE`")
 	fs.BoolVar(&g.offline, "offline", g.offline, "never touch the network")
 	fs.BoolVar(&g.refresh, "refresh", g.refresh, "ignore cached responses when reading")
@@ -124,11 +125,15 @@ func (g *globals) register(fs *flag.FlagSet) {
 }
 
 // validate checks the global flags once every flag is parsed.
-func (g *globals) validate() error {
+func (g *globals) validate(e *env) error {
 	switch g.format {
 	case formatText, formatJSON:
+	case formatGitHub:
+		if e.getenv("GITHUB_OUTPUT") == "" {
+			return usagef("--format github must run in GitHub Actions: GITHUB_OUTPUT is not set")
+		}
 	default:
-		return usagef("--format %q: want text or json", g.format)
+		return usagef("--format %q: want text, json or github", g.format)
 	}
 	if g.timeout <= 0 {
 		return usagef("--timeout %v: want a positive duration", g.timeout)
@@ -173,7 +178,7 @@ func Run(ctx context.Context, args []string, _ io.Reader, stdout, stderr io.Writ
 
 func run(ctx context.Context, args []string, e *env) int {
 	g := defaultGlobals()
-	return e.finish(e.dispatch(ctx, args, g))
+	return e.finish(e.dispatch(ctx, args, g), g)
 }
 
 // command is one subcommand.
@@ -314,18 +319,27 @@ func (e *env) help(_ context.Context, g *globals, args []string) error {
 	}
 }
 
-// finish reports err and returns the exit code it maps to.
-func (e *env) finish(err error) int {
+// finish reports err and returns the exit code it maps to. In GitHub
+// Actions the runner scans standard error for workflow commands too,
+// so there the error goes out only as an escaped annotation: its text
+// may carry an untrusted string, such as an overlay property name.
+func (e *env) finish(err error, g *globals) int {
 	if err == nil || errors.Is(err, errHelpShown) {
 		return ExitOK
 	}
 	msg := err.Error()
-	//nolint:errcheck // Nothing to report a failed write to.
-	_, _ = fmt.Fprintf(e.stderr, "%s: %s\n", progName, msg)
+	if g.format != formatGitHub || e.getenv("GITHUB_OUTPUT") == "" {
+		//nolint:errcheck // Nothing to report a failed write to.
+		_, _ = fmt.Fprintf(e.stderr, "%s: %s\n", progName, msg)
+	}
 	var usageErr *usageError
 	if errors.As(err, &usageErr) {
 		//nolint:errcheck // Nothing to report a failed write to.
 		_, _ = fmt.Fprintf(e.stderr, "Run '%s help' for usage.\n", progName)
+	}
+	if g.format == formatGitHub {
+		//nolint:errcheck // Nothing to report a failed write to.
+		_, _ = fmt.Fprintf(e.stdout, "::error::%s\n", escapeAnnotation(msg))
 	}
 	return exitCode(err)
 }

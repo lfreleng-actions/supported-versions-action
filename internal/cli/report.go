@@ -34,7 +34,7 @@ func (e *env) matrix(ctx context.Context, g *globals, args []string) error {
 	if isSet(fs, "constraint") && isSet(fs, "project") {
 		return usagef("matrix: --constraint and --project are mutually exclusive")
 	}
-	if err = g.validate(); err != nil {
+	if err = g.validate(e); err != nil {
 		return err
 	}
 	req := versions.MatrixRequest{Constraint: *text, ProjectDir: *project, Strict: *strict}
@@ -53,7 +53,7 @@ func (e *env) check(ctx context.Context, g *globals, args []string) error {
 	if len(rest) != 2 {
 		return usagef("check takes a tool and a version, got %d arguments", len(rest))
 	}
-	if err = g.validate(); err != nil {
+	if err = g.validate(e); err != nil {
 		return err
 	}
 	var rep versions.Report
@@ -80,7 +80,7 @@ func (e *env) list(ctx context.Context, g *globals, args []string) error {
 	if len(rest) > 1 {
 		return usagef("list takes at most one tool, got %d arguments", len(rest))
 	}
-	if err = g.validate(); err != nil {
+	if err = g.validate(e); err != nil {
 		return err
 	}
 	if len(rest) == 1 {
@@ -152,13 +152,16 @@ func (e *env) emit(g *globals, rep versions.Report) error {
 	if g.verbose {
 		e.logSources(rep)
 	}
-	if g.format == formatJSON {
+	switch g.format {
+	case formatJSON:
 		data, err := rep.JSON()
 		if err != nil {
 			return err
 		}
 		_, err = e.stdout.Write(data)
 		return err
+	case formatGitHub:
+		return e.emitGitHub(rep)
 	}
 	if err := e.writeWarnings(rep); err != nil {
 		return err
