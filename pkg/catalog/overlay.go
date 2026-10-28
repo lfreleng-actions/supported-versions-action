@@ -56,8 +56,15 @@ type PolicyOverride struct {
 // ParseOverlay parses and validates a policy overlay from YAML bytes.
 // Whether its tool ids exist is checked by Catalog.Apply.
 func ParseOverlay(data []byte) (*Overlay, error) {
+	value, problems, err := decode(data, overlaySchema)
+	if err != nil {
+		return nil, err
+	}
+	if len(problems) > 0 {
+		return nil, joinFieldErrors(problems)
+	}
 	var o Overlay
-	if err := decode(data, overlaySchema, &o); err != nil {
+	if err := decodeStrict(value, overlaySchema, &o); err != nil {
 		return nil, err
 	}
 	return &o, nil

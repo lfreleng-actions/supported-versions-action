@@ -8,16 +8,20 @@
 // policy that selects its supported release lines. Tool versions live
 // in that data, never in Go source.
 //
-// Parsing runs YAML through a JSON-compatible value, the JSON Schema
-// in catalog/schema, a strict typed decode, policy defaults and then
-// the semantic checks a schema cannot express. Every problem found is
-// reported, each as a *FieldError naming its path, joined with
-// errors.Join.
+// Parsing reads a single YAML document into a JSON-compatible value
+// and runs it through the JSON Schema in catalog/schema, a strict
+// typed decode, policy defaults and then the semantic checks a schema
+// cannot express. Content that fails the schema is never decoded:
+// the semantic checks still run for every tool whose own subtree
+// passed it, so one pass reports both kinds of problem. Every problem
+// found is reported, each as a *FieldError naming its path, joined
+// with errors.Join in order of path.
 package catalog
 
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -187,27 +191,70 @@ func Embedded() (*Catalog, error) {
 
 // Parse parses and validates a catalog from YAML bytes.
 func Parse(data []byte) (*Catalog, error) {
+	value, problems, err := decode(data, catalogSchema)
+	if err != nil {
+		return nil, err
+	}
+	if len(problems) > 0 {
+		return nil, joinFieldErrors(append(problems, checkSchemaValidTools(value, problems)...))
+	}
 	var raw rawCatalog
-	if err := decode(data, catalogSchema, &raw); err != nil {
+	if err := decodeStrict(value, catalogSchema, &raw); err != nil {
 		return nil, err
 	}
 	c := &Catalog{Schema: raw.Schema, Tools: make(map[string]Tool, len(raw.Tools))}
 	for id, rt := range raw.Tools {
-		c.Tools[id] = Tool{
-			Name:          rt.Name,
-			Aliases:       rt.Aliases,
-			VersionScheme: rt.VersionScheme,
-			MatrixKey:     rt.MatrixKey,
-			Sources:       rt.Sources,
-			Constraints:   rt.Constraints,
-			Policy:        rt.Policy.withDefaults(),
-			Compatibility: rt.Compatibility,
-		}
+		c.Tools[id] = rt.tool()
 	}
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// checkSchemaValidTools runs the semantic checks over every tool in a
+// catalog value whose own subtree has none of the schema problems
+// given, and returns what they find. Tools with schema problems are
+// left out rather than decoded. When tools is not a map no tool can be
+// isolated, so it returns nothing.
+func checkSchemaValidTools(value any, problems []*FieldError) []*FieldError {
+	root, _ := value.(map[string]any)
+	tools, ok := root["tools"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var found []*FieldError
+	c := &Catalog{Tools: make(map[string]Tool, len(tools))}
+	excluded := make(map[string]bool)
+	for id, tv := range tools {
+		base := "tools." + id
+		if hasProblemUnder(problems, "tools", id) {
+			excluded[id] = true
+			continue
+		}
+		var rt rawTool
+		if err := decodeStrict(tv, base, &rt); err != nil {
+			excluded[id] = true
+			found = append(found, fieldErrorf(base, "%v", err))
+			continue
+		}
+		c.Tools[id] = rt.tool()
+	}
+	return append(found, c.check(excluded)...)
+}
+
+// hasProblemUnder reports whether any problem concerns the field at
+// the JSON pointer tokens given or a field beneath it. It compares
+// tokens rather than dotted paths, which a key containing a dot, such
+// as an unknown root key "tools.demo" or a tool id "demo.extra", would
+// otherwise make ambiguous.
+func hasProblemUnder(problems []*FieldError, tokens ...string) bool {
+	for _, fe := range problems {
+		if len(fe.loc) >= len(tokens) && slices.Equal(fe.loc[:len(tokens)], tokens) {
+			return true
+		}
+	}
+	return false
 }
 
 // Load reads, parses and validates the catalog at path.
@@ -261,4 +308,18 @@ type rawTool struct {
 	Constraints   *Constraints                    `json:"constraints"`
 	Policy        PolicyOverride                  `json:"policy"`
 	Compatibility map[string]map[string]LineRange `json:"compatibility"`
+}
+
+// tool returns the tool with policy defaults applied.
+func (rt rawTool) tool() Tool {
+	return Tool{
+		Name:          rt.Name,
+		Aliases:       rt.Aliases,
+		VersionScheme: rt.VersionScheme,
+		MatrixKey:     rt.MatrixKey,
+		Sources:       rt.Sources,
+		Constraints:   rt.Constraints,
+		Policy:        rt.Policy.withDefaults(),
+		Compatibility: rt.Compatibility,
+	}
 }
