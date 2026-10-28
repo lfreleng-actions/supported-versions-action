@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json",
+  "title": "supported-versions-action versions report",
+  "description": "The report pkg/versions produces for a matrix or a version check. Times are RFC 3339 in UTC; dates are YYYY-MM-DD; unknown dates are omitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "tool", "name", "generated_at", "source", "policy", "matrix", "latest", "lines", "warnings"],
+  "properties": {
+    "schema": {"const": 1},
+    "tool": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "name": {"type": "string", "minLength": 1},
+    "generated_at": {"$ref": "#/$defs/dateTime"},
+    "source": {"$ref": "#/$defs/source"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "constraint": {"$ref": "#/$defs/constraint"},
+    "matrix": {"$ref": "#/$defs/matrix"},
+    "latest": {"type": "string"},
+    "lines": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/line"}
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "check": {"$ref": "#/$defs/check"}
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "lineName": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$"
+    },
+    "kind": {
+      "enum": ["live", "cache", "stale", "snapshot", "unavailable"]
+    },
+    "status": {
+      "enum": ["prerelease", "active", "security", "extended", "eol", "unknown"]
+    },
+    "reason": {
+      "enum": [
+        "prerelease",
+        "no-facts",
+        "below-floor",
+        "above-ceiling",
+        "not-installable",
+        "grace",
+        "not-lts",
+        "not-latest",
+        "eol",
+        "eol-stripped",
+        "constraint"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sources"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/kind"},
+        "snapshot_date": {"$ref": "#/$defs/date"},
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "ref", "kind"],
+            "properties": {
+              "type": {"type": "string", "minLength": 1},
+              "ref": {"type": "string", "minLength": 1},
+              "kind": {"$ref": "#/$defs/kind"},
+              "fetched_at": {"$ref": "#/$defs/dateTime"}
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "admit", "prerelease", "grace_days", "eol_behaviour", "warn_days_before_eol", "overlay", "origin"],
+      "properties": {
+        "rule": {"enum": ["all", "lts", "latest"]},
+        "count": {"type": "integer", "minimum": 1},
+        "current": {"type": "boolean"},
+        "floor": {"$ref": "#/$defs/lineName"},
+        "ceiling": {"$ref": "#/$defs/lineName"},
+        "admit": {"enum": ["released", "installable", "explicit"]},
+        "prerelease": {"type": "boolean"},
+        "grace_days": {"type": "integer", "minimum": 0},
+        "eol_behaviour": {"enum": ["allow", "warn", "strip", "fail"]},
+        "warn_days_before_eol": {"type": "integer", "minimum": 0},
+        "labels": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "overlay": {"type": "boolean"},
+        "origin": {"type": "string"}
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "outcome"],
+      "properties": {
+        "text": {"type": "string"},
+        "origin": {"type": "string", "minLength": 1},
+        "outcome": {"enum": ["applied", "out-of-range-fallback"]}
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "versions"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "versions": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "status", "in_matrix", "lts", "installable"],
+      "properties": {
+        "line": {"$ref": "#/$defs/lineName"},
+        "status": {"$ref": "#/$defs/status"},
+        "in_matrix": {"type": "boolean"},
+        "reason": {"$ref": "#/$defs/reason"},
+        "lts": {"type": "boolean"},
+        "installable": {"type": "boolean"},
+        "newest": {"type": "string", "minLength": 1},
+        "released": {"$ref": "#/$defs/date"},
+        "eoas": {"$ref": "#/$defs/date"},
+        "eol": {"$ref": "#/$defs/date"},
+        "days_to_eol": {"type": "integer"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "line", "status", "supported", "policy_excluded", "in_matrix"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "line": {"$ref": "#/$defs/lineName"},
+        "status": {"$ref": "#/$defs/status"},
+        "supported": {"type": "boolean"},
+        "policy_excluded": {"type": "boolean"},
+        "in_matrix": {"type": "boolean"},
+        "reason": {"$ref": "#/$defs/reason"},
+        "eol": {"$ref": "#/$defs/date"},
+        "days_to_eol": {"type": "integer"}
+      }
+    }
+  }
+}
