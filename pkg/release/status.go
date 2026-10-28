@@ -49,6 +49,12 @@ type Facts struct {
 	IsEOES *bool
 	// EOESFrom is the day extended support ends ("eoesFrom").
 	EOESFrom *time.Time
+	// Latest is the newest patch release of the line ("latest.name").
+	// It is empty when unknown. StatusOf does not read it.
+	Latest string
+	// LatestDate is the day Latest was released ("latest.date").
+	// StatusOf does not read it.
+	LatestDate *time.Time
 	// Prerelease reports that the vendor marks the line as a release
 	// candidate or similar.
 	Prerelease bool
