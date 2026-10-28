@@ -17,6 +17,15 @@ import (
 
 const python = "python"
 
+// demoPolicyCount is the path of the count the demo tools omit.
+const demoPolicyCount = "tools.demo.policy.count"
+
+// Fragments of the errors that reject content after the first document.
+const (
+	secondDocument  = "second YAML document"
+	trailingContent = "trailing content"
+)
+
 func TestEmbedded(t *testing.T) {
 	c, err := catalog.Embedded()
 	if err != nil {
@@ -105,6 +114,28 @@ func TestParseRejectsMalformedYAML(t *testing.T) {
 	}
 }
 
+// TestParseRejectsTrailingDocuments checks content after the first
+// YAML document is rejected rather than silently ignored.
+func TestParseRejectsTrailingDocuments(t *testing.T) {
+	valid, err := os.ReadFile(filepath.Join("testdata", "catalog", "valid.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		trailer string
+		want    string
+	}{
+		"second document": {"---\nschema: 1\ntools: {}\n", secondDocument},
+		"empty document":  {"---\n", secondDocument},
+		"malformed":       {"---\nschema: [1\n", trailingContent},
+	} {
+		_, err := catalog.Parse(append(slices.Clip(valid), tc.trailer...))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Parse = %v; want an error containing %q", name, err, tc.want)
+		}
+	}
+}
+
 // TestParseReportsEveryProblem checks validation does not stop at the
 // first problem.
 func TestParseReportsEveryProblem(t *testing.T) {
@@ -121,7 +152,7 @@ tools:
 	got := errorPaths(err)
 	want := []string{
 		"tools.demo.policy.ceiling",
-		"tools.demo.policy.count",
+		demoPolicyCount,
 		"tools.demo.policy.current",
 		"tools.demo.policy.floor",
 	}
@@ -130,6 +161,113 @@ tools:
 	}
 	if err != nil && !strings.Contains(err.Error(), `tools.demo.policy.floor: "3.x" is not a major.minor line`) {
 		t.Errorf("error does not describe the floor: %v", err)
+	}
+}
+
+// TestParseReportsSchemaAndSemanticProblems checks a schema problem
+// elsewhere in the catalog does not hide the semantic problems of a
+// tool that passed the schema.
+func TestParseReportsSchemaAndSemanticProblems(t *testing.T) {
+	data := `schema: 1
+owner: someone
+tools:
+  demo:
+    name: Demo
+    version_scheme: major.minor
+    matrix_key: demo-version
+    sources: [{type: endoflife, product: demo}]
+    policy: {rule: latest, floor: "3.x", ceiling: "4", current: true}
+`
+	_, err := catalog.Parse([]byte(data))
+	got := errorPaths(err)
+	want := []string{
+		"owner",
+		"tools.demo.policy.ceiling",
+		demoPolicyCount,
+		"tools.demo.policy.current",
+		"tools.demo.policy.floor",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("error paths = %v, want %v (error: %v)", got, want, err)
+	}
+}
+
+// TestParseSkipsToolsFailingSchema checks a tool with a schema problem
+// is left out of the semantic checks, so it draws no spurious or
+// duplicate errors, while the checks still run for the other tools.
+func TestParseSkipsToolsFailingSchema(t *testing.T) {
+	data := `schema: 1
+tools:
+  bad:
+    name: Bad
+    version_scheme: major.minor
+    matrix_key: bad-version
+    sources: [{type: endoflife, product: bad}]
+    policy: {rule: all, floor: "3.x"}
+    extra: true
+  good:
+    name: Good
+    aliases: [bad]
+    version_scheme: major
+    matrix_key: good-version
+    sources: [{type: adoptium}]
+    policy: {rule: latest}
+    compatibility: {bad: {"1": {min: "1.x"}}}
+`
+	_, err := catalog.Parse([]byte(data))
+	got := errorPaths(err)
+	want := []string{
+		"tools.bad.extra",
+		"tools.good.aliases[0]",
+		"tools.good.policy.count",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("error paths = %v, want %v (error: %v)", got, want, err)
+	}
+	if n := countFieldErrors(err); n != len(want) {
+		t.Errorf("%d errors reported, want %d: %v", n, len(want), err)
+	}
+}
+
+// TestParseToolOwnershipIgnoresDottedKeys checks a schema problem at a
+// key containing a dot, whose dotted path reads like the path of a
+// real tool, does not keep that tool out of the semantic checks.
+func TestParseToolOwnershipIgnoresDottedKeys(t *testing.T) {
+	const demo = `  demo:
+    name: Demo
+    version_scheme: major
+    matrix_key: demo-version
+    sources: [{type: endoflife, product: demo}]
+    policy: {rule: latest}
+`
+	for name, tc := range map[string]struct {
+		data string
+		want []string
+	}{
+		"unknown root key": {
+			"schema: 1\n\"tools.demo\": true\ntools:\n" + demo,
+			[]string{"tools.demo", demoPolicyCount},
+		},
+		"invalid sibling id": {
+			"schema: 1\ntools:\n" + demo + strings.Replace(demo, "demo:", "demo.extra:", 1),
+			[]string{"tools.demo.extra", demoPolicyCount},
+		},
+	} {
+		_, err := catalog.Parse([]byte(tc.data))
+		if got := errorPaths(err); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: error paths = %v, want %v (error: %v)", name, got, tc.want, err)
+		}
+	}
+}
+
+// TestParseReportsSchemaProblemsAloneWithoutTools checks a catalog
+// whose tools cannot be isolated reports its schema problems alone.
+func TestParseReportsSchemaProblemsAloneWithoutTools(t *testing.T) {
+	_, err := catalog.Parse([]byte("schema: 1\nowner: someone\ntools: [demo]\n"))
+	got := errorPaths(err)
+	want := []string{"owner", "tools"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("error paths = %v, want %v (error: %v)", got, want, err)
 	}
 }
 
@@ -396,6 +534,26 @@ func TestApplyChecksCatalogSchema(t *testing.T) {
 	assertErrorAt(t, err, "tools.go.policy.admit")
 }
 
+// TestParseOverlayRejectsTrailingDocuments checks policy changes in a
+// second overlay document are rejected rather than silently dropped.
+func TestParseOverlayRejectsTrailingDocuments(t *testing.T) {
+	for name, tc := range map[string]struct {
+		data string
+		want string
+	}{
+		"second document": {
+			"schema: 1\ntools: {}\n---\nschema: 1\ntools:\n  python:\n    policy: {floor: \"3.12\"}\n",
+			secondDocument,
+		},
+		"malformed": {"schema: 1\ntools: {}\n---\ntools: {python: [\n", trailingContent},
+	} {
+		_, err := catalog.ParseOverlay([]byte(tc.data))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: ParseOverlay = %v; want an error containing %q", name, err, tc.want)
+		}
+	}
+}
+
 func TestLoadOverlay(t *testing.T) {
 	if _, err := catalog.LoadOverlay(filepath.Join("testdata", "overlay", "absent.yaml")); err == nil {
 		t.Error("LoadOverlay of a missing file succeeded")
@@ -468,6 +626,21 @@ func errorPaths(err error) []string {
 	}
 	slices.Sort(paths)
 	return slices.Compact(paths)
+}
+
+// countFieldErrors returns how many FieldErrors are joined into err,
+// duplicates included.
+func countFieldErrors(err error) int {
+	if _, ok := err.(*catalog.FieldError); ok {
+		return 1
+	}
+	n := 0
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, inner := range j.Unwrap() {
+			n += countFieldErrors(inner)
+		}
+	}
+	return n
 }
 
 func ptr[T any](v T) *T { return &v }

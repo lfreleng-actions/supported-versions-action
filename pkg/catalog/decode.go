@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +31,10 @@ type FieldError struct {
 	Path string
 	// Message describes the problem.
 	Message string
+	// loc holds the JSON pointer tokens of a schema problem's field.
+	// Unlike Path, it cannot confuse a key containing a dot with a
+	// nested field, so it decides which tool a problem belongs to.
+	loc []string
 }
 
 // Error formats the problem as "path: message".
@@ -68,34 +74,70 @@ const (
 	overlaySchema = "overlay"
 )
 
-// decode runs YAML bytes through the named schema and then decodes
-// them strictly into out, rejecting unknown fields.
-func decode(data []byte, schemaName string, out any) error {
-	schemas, schemaErr := compiledSchemas()
-	if schemaErr != nil {
-		return schemaErr
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("parse %s: %w", schemaName, err)
-	}
-	if doc.Kind == 0 || len(doc.Content) == 0 {
-		return &FieldError{Path: rootPath, Message: "document is empty"}
-	}
-	value, err := yamlToJSON(doc.Content[0], nil)
+// decode parses YAML bytes as a single document and validates the
+// result against the named schema. It returns the JSON-compatible
+// value with every schema problem, sorted by path, so callers can run
+// further checks on the parts the schema accepted. err reports input
+// that could not be read or checked at all.
+func decode(data []byte, schemaName string) (value any, problems []*FieldError, err error) {
+	schemas, err := compiledSchemas()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	encoded, err := validateSchema(schemas[schemaName], schemaName, value)
+	doc, err := parseSingleDocument(data, schemaName)
 	if err != nil {
-		return err
+		return nil, nil, err
+	}
+	value, err = yamlToJSON(doc, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	problems, err = validateSchema(schemas[schemaName], schemaName, value)
+	if err != nil {
+		return nil, nil, err
+	}
+	return value, problems, nil
+}
+
+// decodeStrict decodes a JSON-compatible value into out, rejecting
+// unknown fields. what names the value in an error.
+func decodeStrict(value any, what string, out any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", what, err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(encoded))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
-		return fmt.Errorf("decode %s: %w", schemaName, err)
+		return fmt.Errorf("decode %s: %w", what, err)
 	}
 	return nil
+}
+
+// parseSingleDocument parses data as exactly one YAML document and
+// returns its root node. A second document, or trailing content that
+// does not parse, is an error rather than silently ignored.
+func parseSingleDocument(data []byte, schemaName string) (*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, &FieldError{Path: rootPath, Message: "document is empty"}
+		}
+		return nil, fmt.Errorf("parse %s: %w", schemaName, err)
+	}
+	if doc.Kind == 0 || len(doc.Content) == 0 {
+		return nil, &FieldError{Path: rootPath, Message: "document is empty"}
+	}
+	var extra yaml.Node
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		return doc.Content[0], nil
+	case err != nil:
+		return nil, fmt.Errorf("parse %s: trailing content after the first document: %w", schemaName, err)
+	default:
+		return nil, fieldErrorf(rootPath, "line %d: %s has a second YAML document; only one is allowed", extra.Line, schemaName)
+	}
 }
 
 // checkSchema validates a Go value, such as a catalog or overlay built
@@ -105,13 +147,17 @@ func checkSchema(schemaName string, value any) error {
 	if err != nil {
 		return err
 	}
-	_, err = validateSchema(schemas[schemaName], schemaName, value)
-	return err
+	problems, err := validateSchema(schemas[schemaName], schemaName, value)
+	if err != nil {
+		return err
+	}
+	return joinFieldErrors(problems)
 }
 
-// validateSchema encodes value as JSON, validates it against sch and
-// returns the encoding. Schema problems are joined FieldErrors.
-func validateSchema(sch *jsonschema.Schema, schemaName string, value any) ([]byte, error) {
+// validateSchema validates value, encoded as JSON, against sch and
+// returns its schema problems sorted by path. err reports a value
+// that could not be checked at all.
+func validateSchema(sch *jsonschema.Schema, schemaName string, value any) ([]*FieldError, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("encode %s: %w", schemaName, err)
@@ -125,9 +171,28 @@ func validateSchema(sch *jsonschema.Schema, schemaName string, value any) ([]byt
 		if !errors.As(err, &ve) {
 			return nil, err
 		}
-		return nil, errors.Join(schemaErrors(ve, inst)...)
+		return schemaErrors(ve, inst), nil
 	}
-	return encoded, nil
+	return nil, nil
+}
+
+// joinFieldErrors joins problems in a stable order by path, dropping
+// exact duplicates. It returns nil when there are none.
+func joinFieldErrors(problems []*FieldError) error {
+	sorted := slices.Clone(problems)
+	slices.SortStableFunc(sorted, func(a, b *FieldError) int { return strings.Compare(a.Path, b.Path) })
+	type key struct{ path, message string }
+	seen := make(map[key]bool, len(sorted))
+	errs := make([]error, 0, len(sorted))
+	for _, fe := range sorted {
+		k := key{fe.Path, fe.Message}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		errs = append(errs, fe)
+	}
+	return errors.Join(errs...)
 }
 
 const rootPath = "(root)"
@@ -245,8 +310,11 @@ func slicesClip(s []string) []string {
 
 // schemaErrors flattens a schema validation error into one FieldError
 // per leaf problem, sorted by path.
-func schemaErrors(ve *jsonschema.ValidationError, inst any) []error {
+func schemaErrors(ve *jsonschema.ValidationError, inst any) []*FieldError {
 	var fes []*FieldError
+	at := func(loc []string, message string) {
+		fes = append(fes, &FieldError{Path: instancePath(inst, loc), Message: message, loc: loc})
+	}
 	// owner is the location of the nearest enclosing error whose
 	// location the library copied, and so can be trusted.
 	var walk func(e *jsonschema.ValidationError, owner []string)
@@ -254,12 +322,12 @@ func schemaErrors(ve *jsonschema.ValidationError, inst any) []error {
 		switch k := e.ErrorKind.(type) {
 		case *kind.Required:
 			for _, m := range k.Missing {
-				fes = append(fes, &FieldError{Path: instancePath(inst, append(slicesClip(e.InstanceLocation), m)), Message: "is required"})
+				at(append(slicesClip(e.InstanceLocation), m), "is required")
 			}
 			return
 		case *kind.AdditionalProperties:
 			for _, p := range k.Properties {
-				fes = append(fes, &FieldError{Path: instancePath(inst, append(slicesClip(e.InstanceLocation), p)), Message: "unknown field"})
+				at(append(slicesClip(e.InstanceLocation), p), "unknown field")
 			}
 			return
 		case *kind.PropertyNames:
@@ -269,14 +337,11 @@ func schemaErrors(ve *jsonschema.ValidationError, inst any) []error {
 			// object from the instance, searching only under the owner
 			// so that the same bad key in two objects keeps two paths.
 			loc := propertyOwner(inst, owner, len(e.InstanceLocation), k.Property)
-			fes = append(fes, &FieldError{
-				Path:    instancePath(inst, append(loc, k.Property)),
-				Message: "invalid name: " + leafMessage(e.Causes),
-			})
+			at(append(slicesClip(loc), k.Property), "invalid name: "+leafMessage(e.Causes))
 			return
 		}
 		if len(e.Causes) == 0 {
-			fes = append(fes, &FieldError{Path: instancePath(inst, e.InstanceLocation), Message: leafMessage([]*jsonschema.ValidationError{e})})
+			at(slices.Clone(e.InstanceLocation), leafMessage([]*jsonschema.ValidationError{e}))
 			return
 		}
 		for _, c := range e.Causes {
@@ -285,11 +350,7 @@ func schemaErrors(ve *jsonschema.ValidationError, inst any) []error {
 	}
 	walk(ve, nil)
 	sort.SliceStable(fes, func(i, j int) bool { return fes[i].Path < fes[j].Path })
-	errs := make([]error, len(fes))
-	for i, fe := range fes {
-		errs[i] = fe
-	}
-	return errs
+	return fes
 }
 
 // propertyOwner locates the object at the given depth that holds key,

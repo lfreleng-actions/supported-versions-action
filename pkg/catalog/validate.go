@@ -5,7 +5,6 @@ package catalog
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -22,11 +21,22 @@ var linePatterns = map[string]*regexp.Regexp{
 // validate applies the checks the JSON Schema cannot express and
 // returns every problem found, joined.
 func (c *Catalog) validate() error {
-	var errs []error
+	return joinFieldErrors(c.check(nil))
+}
+
+// check applies the checks the JSON Schema cannot express and returns
+// every problem found. excluded names tools left out of c because they
+// failed the schema: their ids still count as taken, and compatibility
+// with them is not checked, since their definitions cannot be trusted.
+func (c *Catalog) check(excluded map[string]bool) []*FieldError {
+	var errs []*FieldError
 	add := func(fe *FieldError) { errs = append(errs, fe) }
 
-	owners := make(map[string]string, len(c.Tools))
+	owners := make(map[string]string, len(c.Tools)+len(excluded))
 	for id := range c.Tools {
+		owners[id] = "tool id " + strconv.Quote(id)
+	}
+	for id := range excluded {
 		owners[id] = "tool id " + strconv.Quote(id)
 	}
 	ids := c.IDs()
@@ -77,6 +87,8 @@ func (c *Catalog) validate() error {
 			case other == id:
 				add(fieldErrorf(cp, "a tool cannot declare compatibility with itself"))
 				continue
+			case excluded[other]:
+				continue
 			case !found:
 				add(fieldErrorf(cp, "unknown tool %q", other))
 				continue
@@ -94,7 +106,7 @@ func (c *Catalog) validate() error {
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return errs
 }
 
 func validatePolicy(p Policy, base, scheme string, checkLine func(path, line, sch string) bool, add func(*FieldError)) {
