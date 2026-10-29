@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-# Test and lint the Go module
+# Build, test, lint and audit the Go module with the organisation's
+# Go workflows, and run the tests on macOS and Windows as well
 name: 'Go 🐹'
 
 # yamllint disable-line rule:truthy
@@ -20,27 +21,43 @@ concurrency:
 permissions: {}
 
 jobs:
-  test:
-    name: "Test (Go ${{ matrix.go-version }})"
-    runs-on: ubuntu-latest
+  build-test:
+    name: 'Build/Test'
     permissions:
       contents: read
-    timeout-minutes: 15
+      pull-requests: read  # repository-metadata-action reads PR data
+    # yamllint disable-line rule:line-length
+    uses: lfreleng-actions/go-workflows/.github/workflows/build-test.yaml@5b0bd5b4be9988151cc25c245eb858eb0b6dbd10  # v0.6.5
+    with:
+      lint_version: 'v2.15.0'  # the version this repository already uses
+
+  # build-test.yaml runs on Linux only; the module has OS-specific
+  # code paths, so test them on macOS and Windows too. Coverage is
+  # left to the Linux lane.
+  cross-platform:
+    name: "Test (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.26.x', '1.27.x']
+        os: [macos-latest, windows-latest]
     steps:
+      # Harden-runner supports Linux runners only.
       # Load the egress allow-list out-of-band from the
       # organisation's .github repository and publish it as
       # $CONNECTION_ALLOW_LIST for the harden-runner step below.
       # yamllint disable-line rule:line-length
       - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        if: runner.os == 'Linux'
         with:
           config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
 
       # Harden the runner with the just-loaded allow-list.
       - name: 'Harden runner (block)'
+        if: runner.os == 'Linux'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
         with:
@@ -53,49 +70,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: "Set up Go"
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ matrix.go-version }}
-
-      - name: "Run tests"
-        shell: bash
-        run: go test -race -coverprofile=coverage.out ./...
-
-  lint:
-    name: "Lint"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 15
-    steps:
-      # Same hardening as the test job above.
-      # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
-        with:
-          config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
-
-      - name: 'Harden runner (block)'
+      - name: "Run Go tests"
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        uses: lfreleng-actions/go-test-action@df1cb722d651b1bf4476fddb221e05a88629072a  # v0.1.2
         with:
-          egress-policy: 'block'
-          allowed-endpoints: >
-            ${{ env.CONNECTION_ALLOW_LIST }}
-
-      - name: "Checkout repository"
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: "Set up Go"
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.x'
-
-      - name: "Run golangci-lint"
-        # yamllint disable-line rule:line-length
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.15.0
-          args: --timeout=5m
+          go_version_file: 'go.mod'
+          race: true
+          coverage: false
