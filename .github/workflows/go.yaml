@@ -70,6 +70,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary workaround: lfreleng-actions/go-test-action v0.1.2
+      # calls GNU 'realpath -m', which the BSD realpath on macOS lacks.
+      # Put Homebrew's GNU coreutils first on PATH until a fixed
+      # release of the action exists, then remove this step.
+      - name: "Use GNU coreutils (macOS)"
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew list coreutils >/dev/null 2>&1 || brew install coreutils
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+
       - name: "Run Go tests"
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/go-test-action@df1cb722d651b1bf4476fddb221e05a88629072a  # v0.1.2
