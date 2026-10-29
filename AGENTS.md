@@ -33,5 +33,27 @@ a pull request, not the full set:
 
 ## Repository specifics
 
-None: working in this repository needs nothing beyond the organisation
-guidelines.
+The design and development plan is [`docs/DESIGN.md`](docs/DESIGN.md).
+Read its sections 4, 6 and 11 before changing code. Beyond the
+organisation guidelines:
+
+- **Tool versions live in data, never in Go source.** Release lines,
+  floors and ceilings belong in `catalog/catalog.yaml`; release facts
+  belong in `catalog/snapshot.json`. Tests and `testdata/` may contain
+  versions. A pull request adding a version number to non-test Go code
+  is wrong even if it works.
+- **No executable files.** Run shell helpers as `bash path/to/script.sh`
+  and Go programs with `go run`. Automated agents publish through an
+  API that cannot preserve the executable bit, so an executable file
+  makes a change unpublishable. The template's `.github/hooks/*.sh`
+  are the one exception; leave their mode alone.
+- **Tests never touch the network.** Source-client tests use
+  `httptest` servers that replay responses recorded under `testdata/`.
+  Nothing but a job explicitly named as a live check may call upstream
+  services.
+- **The JSON report is a contract.** Within schema version 1, add
+  fields; never remove or rename them. Update
+  `catalog/schema/report.schema.json` with any change to the report.
+- **Go hooks need local tools.** The pre-commit hooks for Go run with
+  `language: system`: install Go (the version in `go.mod` or newer) and
+  golangci-lint v2 before running `prek`.
