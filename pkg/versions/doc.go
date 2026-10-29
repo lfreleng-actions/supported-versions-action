@@ -5,7 +5,7 @@
 // reports them. It is the module's public API.
 //
 // A Resolver wires the other packages into one pipeline: the catalog,
-// with an optional policy overlay; the release facts, from the runner
+// with an optional policy overlay and override; the release facts, from the runner
 // cache, then the network, then a stale cache entry, then the embedded
 // snapshot; the policy, which selects the supported lines; the
 // project's constraint, which narrows them; and the Report, whose JSON

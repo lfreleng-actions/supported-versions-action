@@ -36,8 +36,12 @@ type Options struct {
 	Catalog *catalog.Catalog
 	// Overlay adjusts the catalog's policies; nil applies none.
 	Overlay *catalog.Overlay
-	// OverlayOrigin names the overlay for the report, for example a
-	// repository and commit.
+	// Override replaces policy fields of every catalog tool; nil
+	// applies none. It is applied after Overlay, so a field set in both
+	// takes the Override value. It is validated as an overlay is.
+	Override *catalog.PolicyOverride
+	// OverlayOrigin names the overlay and any override for the report,
+	// for example a repository and commit.
 	OverlayOrigin string
 	// Snapshot is the offline fallback; nil uses snapshot.Embedded().
 	Snapshot *snapshot.Snapshot
@@ -59,6 +63,7 @@ type Options struct {
 type Resolver struct {
 	catalog       *catalog.Catalog
 	overlay       *catalog.Overlay
+	override      bool
 	overlayOrigin string
 	snapshot      *snapshot.Snapshot
 	now           func() time.Time
@@ -67,8 +72,8 @@ type Resolver struct {
 }
 
 // New returns a Resolver configured by opts. It applies and so
-// validates the overlay, and loads the embedded catalog and snapshot
-// where opts gives none.
+// validates the overlay and the override, and loads the embedded
+// catalog and snapshot where opts gives none.
 func New(opts Options) (*Resolver, error) {
 	cat := opts.Catalog
 	if cat == nil {
@@ -77,11 +82,9 @@ func New(opts Options) (*Resolver, error) {
 			return nil, fmt.Errorf("versions: %w", err)
 		}
 	}
-	if opts.Overlay != nil {
-		var err error
-		if cat, err = cat.Apply(opts.Overlay); err != nil {
-			return nil, fmt.Errorf("versions: overlay: %w", err)
-		}
+	cat, err := applyPolicy(cat, opts)
+	if err != nil {
+		return nil, err
 	}
 	snap := opts.Snapshot
 	if snap == nil {
@@ -104,12 +107,39 @@ func New(opts Options) (*Resolver, error) {
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
+		override:      opts.Override != nil,
 		overlayOrigin: opts.OverlayOrigin,
 		snapshot:      snap,
 		now:           now,
 		eol:           eol,
 		manifests:     manifests,
 	}, nil
+}
+
+// overrideSchema is the overlay format version of the overlay an
+// override is turned into.
+const overrideSchema = 1
+
+// applyPolicy returns cat with opts.Overlay and then opts.Override
+// applied. The override reaches every tool through Catalog.Apply, so it
+// meets the overlay schema and the merged catalog is validated.
+func applyPolicy(cat *catalog.Catalog, opts Options) (*catalog.Catalog, error) {
+	var err error
+	if opts.Overlay != nil {
+		if cat, err = cat.Apply(opts.Overlay); err != nil {
+			return nil, fmt.Errorf("versions: overlay: %w", err)
+		}
+	}
+	if opts.Override != nil {
+		o := &catalog.Overlay{Schema: overrideSchema, Tools: make(map[string]catalog.ToolOverlay, len(cat.Tools))}
+		for _, id := range cat.IDs() {
+			o.Tools[id] = catalog.ToolOverlay{Policy: *opts.Override}
+		}
+		if cat, err = cat.Apply(o); err != nil {
+			return nil, fmt.Errorf("versions: override: %w", err)
+		}
+	}
+	return cat, nil
 }
 
 // lookup resolves a tool id or alias.
@@ -121,8 +151,12 @@ func (r *Resolver) lookup(name string) (string, catalog.Tool, error) {
 	return id, tool, nil
 }
 
-// overlaid reports whether the overlay adjusts the tool id.
+// overlaid reports whether the overlay or the override adjusts the
+// tool id.
 func (r *Resolver) overlaid(id string) bool {
+	if r.override {
+		return true
+	}
 	if r.overlay == nil {
 		return false
 	}
