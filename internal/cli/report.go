@@ -121,6 +121,13 @@ func (e *env) resolve(g *globals, fn func(*versions.Resolver) (versions.Report, 
 		}
 		opts.OverlayOrigin = g.policy
 	}
+	if opts.Override = g.override(); opts.Override != nil {
+		if opts.OverlayOrigin == "" {
+			opts.OverlayOrigin = originFlags
+		} else {
+			opts.OverlayOrigin += "; " + originFlags
+		}
+	}
 	if !g.noCache {
 		c, cacheErr := openCache(g.cacheDir)
 		if cacheErr != nil {
@@ -137,8 +144,14 @@ func (e *env) resolve(g *globals, fn func(*versions.Resolver) (versions.Report, 
 	if rep.Tool == "" {
 		return runErr
 	}
+	if g.matrixKey != "" {
+		rep.Matrix.Key = g.matrixKey
+	}
 	return errors.Join(e.emit(g, rep), runErr)
 }
+
+// originFlags names the policy flags as an origin in the report.
+const originFlags = "flags"
 
 func openCache(dir string) (*cache.Cache, error) {
 	if dir == "" {

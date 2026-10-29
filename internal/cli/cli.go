@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"time"
 
+	"github.com/lfreleng-actions/supported-versions-action/pkg/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/policy"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
@@ -89,17 +92,49 @@ type env struct {
 
 // globals hold the global flags.
 type globals struct {
-	format   string
-	policy   string
-	offline  bool
-	refresh  bool
-	cacheDir string
-	noCache  bool
-	maxAge   time.Duration
-	timeout  time.Duration
-	retries  int
-	verbose  bool
+	format       string
+	policy       string
+	eolBehaviour string //nolint:misspell // spelled as the catalog field
+	prerelease   optionalBool
+	matrixKey    string
+	offline      bool
+	refresh      bool
+	cacheDir     string
+	noCache      bool
+	maxAge       time.Duration
+	timeout      time.Duration
+	retries      int
+	verbose      bool
 }
+
+// optionalBool is a boolean flag that records whether it was given,
+// so that an explicit false can override a policy's true.
+type optionalBool struct {
+	set   bool
+	value bool
+}
+
+func (b *optionalBool) String() string {
+	if b == nil || !b.set {
+		return ""
+	}
+	return strconv.FormatBool(b.value)
+}
+
+func (b *optionalBool) Set(s string) error {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
+	}
+	b.set, b.value = true, v
+	return nil
+}
+
+// IsBoolFlag lets the flag stand alone, as --prerelease.
+func (b *optionalBool) IsBoolFlag() bool { return true }
+
+// matrixKeyPattern is what --matrix-key accepts.
+var matrixKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 
 func defaultGlobals() *globals {
 	return &globals{
@@ -116,6 +151,10 @@ func defaultGlobals() *globals {
 func (g *globals) register(fs *flag.FlagSet) {
 	fs.StringVar(&g.format, "format", g.format, "output `FORMAT`: text, json or github")
 	fs.StringVar(&g.policy, "policy", g.policy, "apply the policy overlay in local `FILE`")
+	fs.StringVar(&g.eolBehaviour, "eol-behaviour", g.eolBehaviour, //nolint:misspell // spelled as the catalog field
+		"override every tool's end-of-life behaviour with `VALUE`: warn, strip, fail or allow") //nolint:misspell // spelled as the catalog field
+	fs.Var(&g.prerelease, "prerelease", "override every tool's policy to admit pre-release lines, or not with --prerelease=false")
+	fs.StringVar(&g.matrixKey, "matrix-key", g.matrixKey, "name the matrix `KEY` in place of the catalog's")
 	fs.BoolVar(&g.offline, "offline", g.offline, "never touch the network")
 	fs.BoolVar(&g.refresh, "refresh", g.refresh, "ignore cached responses when reading")
 	fs.StringVar(&g.cacheDir, "cache-dir", g.cacheDir,
@@ -147,6 +186,14 @@ func (g *globals) validate(e *env) error {
 	if g.retries < 0 {
 		return usagef("--retries %d: want zero or more", g.retries)
 	}
+	switch g.eolBehaviour {
+	case "", catalog.EOLWarn, catalog.EOLStrip, catalog.EOLFail, catalog.EOLAllow:
+	default:
+		return usagef("--eol-behaviour %q: want warn, strip, fail or allow", g.eolBehaviour) //nolint:misspell // spelled as the catalog field
+	}
+	if g.matrixKey != "" && !matrixKeyPattern.MatchString(g.matrixKey) {
+		return usagef("--matrix-key %q: want a letter, then up to 63 letters, digits, '_' or '-'", g.matrixKey)
+	}
 	if g.policy != "" {
 		fi, err := os.Stat(g.policy)
 		if err != nil || !fi.Mode().IsRegular() {
@@ -154,6 +201,25 @@ func (g *globals) validate(e *env) error {
 		}
 	}
 	return nil
+}
+
+// override returns the policy fields the flags replace in every tool,
+// or nil when no flag replaces any.
+func (g *globals) override() *catalog.PolicyOverride {
+	var o catalog.PolicyOverride
+	set := false
+	if g.eolBehaviour != "" {
+		v := g.eolBehaviour
+		o.EOLBehaviour, set = &v, true
+	}
+	if g.prerelease.set {
+		v := g.prerelease.value
+		o.Prerelease, set = &v, true
+	}
+	if !set {
+		return nil
+	}
+	return &o
 }
 
 // fetchOptions maps the global flags to the fetcher's options.

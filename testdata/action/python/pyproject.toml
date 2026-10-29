@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Fixture for the action self-tests in .github/workflows/testing.yaml
+[project]
+name = "supported-versions-fixture"
+version = "0.0.0"
+requires-python = ">=3.12"

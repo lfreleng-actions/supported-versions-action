@@ -1,53 +1,309 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 The Linux Foundation
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-# actions-template
-name: "🛠️ Actions Template"
-description: "Description of action"
-# Any relevant notes/observations can go here
+# Builds cmd/supported-versions from this action's own source and runs
+# it with --format github. The CLI writes every output, annotation and
+# summary; this action only maps inputs to flags.
+name: "🔢 Supported Versions"
+description: >-
+  Resolve the supported release lines of a tool as a build matrix, or check one
+  version
 
 inputs:
-  input:
-    description: "Description of input"
+  tool:
+    description: "Catalog tool id or alias, for example python or go"
     required: true
+  mode:
+    description: "Command to run: matrix, check or list"
+    required: false
+    default: "matrix"
+  version:
+    description: >-
+      Version to check; required in check mode and rejected in the others
+    required: false
+    default: ""
+  constraint:
+    description: >-
+      Constraint applied to the matrix; wins over path_prefix; matrix mode only
+    required: false
+    default: ""
+  path_prefix:
+    description: >-
+      Project directory to detect the constraint in when constraint is
+      empty; an empty value disables detection; used in matrix mode only
+    required: false
+    default: "."
+  strict_constraint:
+    description: >-
+      Fail when the constraint allows no line of the policy matrix; matrix mode
+      only
+    required: false
+    default: "false"
+  fail_on_unsupported:
+    description: >-
+      Fail when the checked version is not supported; check mode only
+    required: false
+    default: "false"
+  policy:
+    description: "Path to a local policy overlay file"
+    required: false
+    default: ""
+  offline_mode:
+    description: >-
+      Never touch the network; use the cache or the embedded snapshot
+    required: false
+    default: "false"
+  network_timeout:
+    description: "Per-request timeout in whole seconds, 1 to 300"
+    required: false
+    default: "5"
+  max_retries:
+    description: "Retries for a failed request, 0 to 10"
+    required: false
+    default: "2"
+  eol_behaviour:
+    description: >-
+      Override the end-of-life behaviour of the policy: warn, strip,
+      fail or allow. Empty keeps the catalog or overlay value; a
+      non-empty default would silently override both
+    required: false
+    default: ""
+  include_prerelease:
+    description: >-
+      Override whether the policy admits pre-release lines: true or
+      false. Empty keeps the catalog or overlay value; a non-empty
+      default would silently override both
+    required: false
+    default: ""
+  matrix_key:
+    description: "Rename the key of matrix_json and of the report's matrix"
+    required: false
+    default: ""
+  summary:
+    description: "Write a section to the job summary"
+    required: false
+    default: "true"
 
 outputs:
-  output:
-    description: "Description of output"
-    value: ${{ steps.code.outputs.output }}
+  matrix_json:
+    description: >-
+      JSON object mapping the matrix key to the supported lines; every mode
+    value: ${{ steps.resolve.outputs.matrix_json }}
+  supported_versions:
+    description: "Supported lines of the matrix, space separated; every mode"
+    value: ${{ steps.resolve.outputs.supported_versions }}
+  latest:
+    description: "Newest stable line in the matrix; every mode"
+    value: ${{ steps.resolve.outputs.latest }}
+  eol_versions:
+    description: >-
+      End-of-life lines kept in the matrix, space separated; every mode
+    value: ${{ steps.resolve.outputs.eol_versions }}
+  versions_source:
+    description: >-
+      Where the release facts came from, the worst over the tool's
+      sources: live, cache, stale or snapshot:<date>; every mode
+    value: ${{ steps.resolve.outputs.versions_source }}
+  report_path:
+    description: "Path of the JSON report under RUNNER_TEMP; every mode"
+    value: ${{ steps.resolve.outputs.report_path }}
+  status:
+    description: "Status of the checked version's line; check mode only"
+    value: ${{ steps.resolve.outputs.status }}
+  supported:
+    description: >-
+      Whether the checked version is supported, true or false; check mode only
+    value: ${{ steps.resolve.outputs.supported }}
+  policy_excluded:
+    description: >-
+      Whether the policy excludes a line upstream supports, true or false; check
+      mode only
+    value: ${{ steps.resolve.outputs.policy_excluded }}
+  eol_date:
+    description: >-
+      End-of-life date of the checked version's line, if known; check mode only
+    value: ${{ steps.resolve.outputs.eol_date }}
 
 runs:
   using: "composite"
   steps:
-    - name: "Friendly Name"
-      id: code
+    # Keep a caller's Go on PATH when it can switch toolchains
+    # (GOTOOLCHAIN, Go 1.21 and newer): setup-go would change PATH for
+    # every later step of the caller's job.
+    - name: "Probe for Go"
+      id: probe
+      shell: bash
+      run: |
+        # Probe for Go
+        setup_go=true
+        tmp="${RUNNER_TEMP//\\//}"
+        if command -v go >/dev/null 2>&1; then
+          # Run outside any module, so the caller's go.mod cannot
+          # trigger a toolchain switch just to report the version.
+          ver=$(cd "$tmp" && GOENV=off GOFLAGS='' GOWORK=off \
+            GOTOOLCHAIN=local go env GOVERSION 2>/dev/null) || ver=''
+          case "$ver" in
+            go1.[0-9]*)
+              minor="${ver#go1.}"
+              minor="${minor%%[!0-9]*}"
+              if [ "${#minor}" -le 4 ] && [ "$((10#$minor))" -ge 21 ]; then
+                setup_go=false
+              fi
+              ;;
+          esac
+          echo "Found Go: ${ver:-unknown version}"
+        fi
+        echo "setup_go=$setup_go" >> "$GITHUB_OUTPUT"
+
+    - name: "Set up Go"
+      if: steps.probe.outputs.setup_go == 'true'
+      # yamllint disable-line rule:line-length
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    - name: "Build supported-versions"
+      id: build
       shell: bash
       env:
-        INPUT_VALUE: ${{ inputs.input }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        # Friendly Name
-        input="$INPUT_VALUE"
-        if [ -z "$input" ]; then
-          echo "Error: mandatory input was not set/configured ❌"
+        # Build supported-versions
+        set -euo pipefail
+        tmp="${RUNNER_TEMP//\\//}"
+        out_dir=$(mktemp -d "$tmp/supported-versions.XXXXXX")
+        # Isolate the build from the caller's Go settings: a
+        # cross-compile, vendoring or GOTOOLCHAIN=local must not break it.
+        binary=$(
+          # Substitutions drop errexit; bash 3.2 lacks inherit_errexit.
+          set -e
+          export GOENV=off GOFLAGS='' GOWORK=off GOOS='' GOARCH='' \
+            CGO_ENABLED=0 GOTOOLCHAIN=auto
+          cd "$ACTION_PATH"
+          bin="$out_dir/supported-versions$(go env GOEXE)"
+          go build -trimpath -buildvcs=false -o "$bin" \
+            ./cmd/supported-versions
+          printf '%s' "$bin"
+        )
+        echo "binary=$binary" >> "$GITHUB_OUTPUT"
+
+    - name: "Run supported-versions"
+      id: resolve
+      shell: bash
+      env:
+        BINARY: ${{ steps.build.outputs.binary }}
+        TOOL: ${{ inputs.tool }}
+        MODE: ${{ inputs.mode }}
+        VERSION: ${{ inputs.version }}
+        CONSTRAINT: ${{ inputs.constraint }}
+        PATH_PREFIX: ${{ inputs.path_prefix }}
+        STRICT_CONSTRAINT: ${{ inputs.strict_constraint }}
+        FAIL_ON_UNSUPPORTED: ${{ inputs.fail_on_unsupported }}
+        POLICY: ${{ inputs.policy }}
+        OFFLINE_MODE: ${{ inputs.offline_mode }}
+        NETWORK_TIMEOUT: ${{ inputs.network_timeout }}
+        MAX_RETRIES: ${{ inputs.max_retries }}
+        EOL_BEHAVIOUR: ${{ inputs.eol_behaviour }}
+        INCLUDE_PRERELEASE: ${{ inputs.include_prerelease }}
+        MATRIX_KEY: ${{ inputs.matrix_key }}
+        SUMMARY: ${{ inputs.summary }}
+      run: |
+        # Run supported-versions
+        set -uo pipefail
+
+        # Print an escaped annotation, so no input can inject a
+        # workflow command, and fail before the binary runs.
+        fail() {
+          local msg="$1"
+          msg="${msg//\%/%25}"
+          msg="${msg//$'\r'/%0D}"
+          msg="${msg//$'\n'/%0A}"
+          printf '::error::%s\n' "$msg"
           exit 1
+        }
+        boolean() {
+          case "$2" in
+            true|false) ;;
+            *) fail "$1: want true or false, got '$2'" ;;
+          esac
+        }
+        # integer NAME VALUE MIN MAX
+        integer() {
+          case "$2" in
+            ''|*[!0-9]*)
+              fail "$1: want a whole number from $3 to $4, got '$2'" ;;
+          esac
+          if [ "${#2}" -gt 9 ] || [ "$((10#$2))" -lt "$3" ] ||
+            [ "$((10#$2))" -gt "$4" ]; then
+            fail "$1: want a whole number from $3 to $4, got '$2'"
+          fi
+        }
+
+        [ -n "$TOOL" ] || fail "tool: required"
+        case "$MODE" in
+          matrix|check|list) ;;
+          *) fail "mode: want matrix, check or list, got '$MODE'" ;;
+        esac
+        boolean strict_constraint "$STRICT_CONSTRAINT"
+        boolean fail_on_unsupported "$FAIL_ON_UNSUPPORTED"
+        boolean offline_mode "$OFFLINE_MODE"
+        boolean summary "$SUMMARY"
+        if [ -n "$INCLUDE_PRERELEASE" ]; then
+          boolean include_prerelease "$INCLUDE_PRERELEASE"
+        fi
+        integer network_timeout "$NETWORK_TIMEOUT" 1 300
+        integer max_retries "$MAX_RETRIES" 0 10
+        if [ "$MODE" = check ]; then
+          [ -n "$VERSION" ] || fail "version: required in check mode"
+        elif [ -n "$VERSION" ]; then
+          fail "version: only valid in check mode"
+        fi
+        if [ "$MODE" != matrix ]; then
+          [ -z "$CONSTRAINT" ] || fail "constraint: only valid in matrix mode"
+          [ "$STRICT_CONSTRAINT" = false ] ||
+            fail "strict_constraint: only valid in matrix mode"
+        fi
+        if [ "$MODE" != check ] && [ "$FAIL_ON_UNSUPPORTED" = true ]; then
+          fail "fail_on_unsupported: only valid in check mode"
         fi
 
-        # Write the output using the multiline heredoc format with a random
-        # delimiter so that an input containing newlines cannot inject
-        # additional keys into $GITHUB_OUTPUT (output-file injection). The
-        # delimiter is built from shell-builtin randomness (no external
-        # tools such as openssl/uuidgen, which are not guaranteed on
-        # self-hosted runners) and regenerated until it is provably absent
-        # from the value being emitted.
-        delimiter="ghadelim_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
-        while [[ "$input" == *"$delimiter"* ]]; do
-          delimiter="ghadelim_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
-        done
-        {
-          printf '%s<<%s\n' 'output' "$delimiter"
-          printf '%s\n' "$input"
-          printf '%s\n' "$delimiter"
-        } >> "$GITHUB_OUTPUT"
-        echo "Action received: $input ✅"
-        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
+        # Every flag takes the --flag=value form and '--' ends the
+        # flags, so no value can turn into a flag.
+        args=(--format=github "--timeout=$((10#$NETWORK_TIMEOUT))s"
+          "--retries=$((10#$MAX_RETRIES))")
+        [ "$OFFLINE_MODE" = false ] || args+=(--offline)
+        [ -z "$POLICY" ] || args+=("--policy=$POLICY")
+        [ -z "$EOL_BEHAVIOUR" ] ||
+          args+=("--eol-behaviour=$EOL_BEHAVIOUR")
+        [ -z "$INCLUDE_PRERELEASE" ] ||
+          args+=("--prerelease=$INCLUDE_PRERELEASE")
+        [ -z "$MATRIX_KEY" ] || args+=("--matrix-key=$MATRIX_KEY")
+        args+=("$MODE")
+        case "$MODE" in
+          matrix)
+            if [ -n "$CONSTRAINT" ]; then
+              args+=("--constraint=$CONSTRAINT")
+            elif [ -n "$PATH_PREFIX" ]; then
+              args+=("--project=$PATH_PREFIX")
+            fi
+            [ "$STRICT_CONSTRAINT" = false ] || args+=(--strict)
+            args+=(-- "$TOOL")
+            ;;
+          check)
+            [ "$FAIL_ON_UNSUPPORTED" = false ] || args+=(--fail)
+            args+=(-- "$TOOL" "$VERSION")
+            ;;
+          list)
+            args+=(-- "$TOOL")
+            ;;
+        esac
+
+        rc=0
+        if [ "$SUMMARY" = true ]; then
+          "$BINARY" "${args[@]}" || rc=$?
+        else
+          GITHUB_STEP_SUMMARY='' "$BINARY" "${args[@]}" || rc=$?
+        fi
+        exit "$rc"
