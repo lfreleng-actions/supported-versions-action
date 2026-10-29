@@ -19,24 +19,394 @@ concurrency:
 
 permissions: {}
 
+# The assertions are structural: none hard-codes a matrix, a latest
+# version or a snapshot date, so new releases and snapshots keep them
+# passing.
 jobs:
-  ### Test the GitHub Action in this Repository ###
-  tests:
-    name: "Test local GitHub Action"
-    runs-on: ubuntu-latest
+  action:
+    name: "Test local GitHub Action (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    timeout-minutes: 10 # Increase this timeout value as needed
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      # Harden-runner supports Linux runners only.
       # Load the egress allow-list out-of-band from the
       # organisation's .github repository and publish it as
       # $CONNECTION_ALLOW_LIST for the harden-runner step below.
       # yamllint disable-line rule:line-length
       - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        if: runner.os == 'Linux'
         with:
           config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
 
       # Harden the runner with the just-loaded allow-list.
+      - name: 'Harden runner (block)'
+        if: runner.os == 'Linux'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: "Checkout repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Matrix: python, detected constraint"
+        id: python
+        uses: $/
+        with:
+          tool: python
+          path_prefix: testdata/action/python
+
+      - name: "Check: python matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.python.outputs.matrix_json }}
+          SUPPORTED: ${{ steps.python.outputs.supported_versions }}
+          LATEST: ${{ steps.python.outputs.latest }}
+          SOURCE: ${{ steps.python.outputs.versions_source }}
+          REPORT: ${{ steps.python.outputs.report_path }}
+        run: |
+          # Check: python matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          # jq on Windows may end lines with CR; drop it.
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          jq -e 'type == "object"' <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json does not parse as an object"
+          keys=$(jqr -c 'keys' <<< "$MATRIX_JSON")
+          [ "$keys" = '["python-version"]' ] ||
+            fail "matrix_json keys are not exactly python-version"
+          jq -e '.["python-version"] | length > 0 and all(
+              split(".") | map(tonumber)
+              | .[0] > 3 or (.[0] == 3 and .[1] >= 12))' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json holds a line below 3.12"
+          last=$(jqr '.["python-version"][-1]' <<< "$MATRIX_JSON")
+          [ "$LATEST" = "$last" ] || fail "latest '$LATEST' is not '$last'"
+          joined=$(jqr '.["python-version"] | join(" ")' <<< "$MATRIX_JSON")
+          [ "$SUPPORTED" = "$joined" ] ||
+            fail "supported_versions '$SUPPORTED' is not '$joined'"
+          re='^(live|cache|snapshot:[0-9]{4}-[0-9]{2}-[0-9]{2})$'
+          [[ "$SOURCE" =~ $re ]] || fail "versions_source '$SOURCE'"
+          report_file="${REPORT//\\//}"
+          [ -f "$report_file" ] || fail "report_path '$REPORT' is not a file"
+          [ "$(jqr '.tool' "$report_file")" = python ] ||
+            fail "the report's tool is not python"
+
+      - name: "Matrix: golang alias, default path_prefix"
+        id: golang
+        uses: $/
+        with:
+          tool: golang
+
+      - name: "Check: golang matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.golang.outputs.matrix_json }}
+          REPORT: ${{ steps.golang.outputs.report_path }}
+        run: |
+          # Check: golang matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          [ "$(jqr -c 'keys' <<< "$MATRIX_JSON")" = '["go-version"]' ] ||
+            fail "matrix_json keys are not exactly go-version"
+          origin=$(jqr '.constraint.origin' "${REPORT//\\//}")
+          [ "$origin" = "go.mod:go" ] ||
+            fail "constraint origin '$origin' is not go.mod:go"
+
+      - name: "Matrix: python, matrix_key"
+        id: key
+        uses: $/
+        with:
+          tool: python
+          matrix_key: python
+
+      - name: "Check: matrix_key"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.key.outputs.matrix_json }}
+        run: |
+          # Check: matrix_key
+          set -euo pipefail
+          keys=$(jq -c 'keys' <<< "$MATRIX_JSON")
+          keys="${keys//$'\r'/}"
+          if [ "$keys" != '["python"]' ]; then
+            echo "::error::matrix_json keys are $keys, not python"
+            exit 1
+          fi
+
+      - name: "Check: python 3.10"
+        id: check
+        uses: $/
+        with:
+          tool: python
+          mode: check
+          version: '3.10'
+
+      - name: "Check: python 3.10 outputs"
+        shell: bash
+        env:
+          SUPPORTED: ${{ steps.check.outputs.supported }}
+          STATUS: ${{ steps.check.outputs.status }}
+          EOL_DATE: ${{ steps.check.outputs.eol_date }}
+        run: |
+          # Check: python 3.10 outputs
+          set -euo pipefail
+          # Python 3.10 reached end-of-life on 2026-10-01.
+          if [ "$SUPPORTED" != false ] || [ "$STATUS" != eol ] ||
+            [ -z "$EOL_DATE" ]; then
+            echo "::error::supported=$SUPPORTED status=$STATUS" \
+              "eol_date=$EOL_DATE"
+            exit 1
+          fi
+
+      - name: "Check: python 3.10, fail_on_unsupported"
+        id: check-fail
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          mode: check
+          version: '3.10'
+          fail_on_unsupported: 'true'
+
+      - name: "List: go"
+        uses: $/
+        with:
+          tool: go
+          mode: list
+
+      - name: "Invalid: mode"
+        id: bad-mode
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          mode: bogus
+
+      - name: "Invalid: version in matrix mode"
+        id: bad-version
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          version: '3.12'
+
+      - name: "Invalid: network_timeout"
+        id: bad-timeout
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          network_timeout: abc
+
+      - name: "Invalid: offline_mode"
+        id: bad-offline
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          offline_mode: 'yes'
+
+      - name: "Invalid: matrix_key"
+        id: bad-key
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          matrix_key: '1x'
+
+      - name: "Invalid: eol_behaviour"
+        id: bad-eol
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          eol_behaviour: bogus
+
+      - name: "Invalid: tool"
+        id: bad-tool
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: no-such-tool
+
+      - name: "Invalid: path_prefix"
+        id: bad-path
+        continue-on-error: true
+        uses: $/
+        with:
+          tool: python
+          path_prefix: does/not/exist
+
+      - name: "Check: the expected failures failed"
+        shell: bash
+        env:
+          CHECK_FAIL: ${{ steps.check-fail.outcome }}
+          BAD_MODE: ${{ steps.bad-mode.outcome }}
+          BAD_VERSION: ${{ steps.bad-version.outcome }}
+          BAD_TIMEOUT: ${{ steps.bad-timeout.outcome }}
+          BAD_OFFLINE: ${{ steps.bad-offline.outcome }}
+          BAD_KEY: ${{ steps.bad-key.outcome }}
+          BAD_EOL: ${{ steps.bad-eol.outcome }}
+          BAD_TOOL: ${{ steps.bad-tool.outcome }}
+          BAD_PATH: ${{ steps.bad-path.outcome }}
+        run: |
+          # Check: the expected failures failed
+          status=0
+          for pair in "fail_on_unsupported=$CHECK_FAIL" "mode=$BAD_MODE" \
+            "version=$BAD_VERSION" "network_timeout=$BAD_TIMEOUT" \
+            "offline_mode=$BAD_OFFLINE" "matrix_key=$BAD_KEY" \
+            "eol_behaviour=$BAD_EOL" "tool=$BAD_TOOL" \
+            "path_prefix=$BAD_PATH"; do
+            if [ "${pair#*=}" != failure ]; then
+              echo "::error::${pair%%=*}: outcome '${pair#*=}', want failure"
+              status=1
+            fi
+          done
+          exit "$status"
+
+  offline:
+    name: "Test offline mode"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        if: runner.os == 'Linux'
+        with:
+          config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
+
+      - name: 'Harden runner (block)'
+        if: runner.os == 'Linux'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: "Checkout repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Matrix: python, offline"
+        id: offline
+        uses: $/
+        with:
+          tool: python
+          offline_mode: 'true'
+
+      - name: "Check: the snapshot answered"
+        shell: bash
+        env:
+          SOURCE: ${{ steps.offline.outputs.versions_source }}
+        run: |
+          # Check: the snapshot answered
+          case "$SOURCE" in
+            snapshot:*) echo "versions_source: $SOURCE" ;;
+            *) echo "::error::versions_source '$SOURCE', want snapshot:*"
+              exit 1 ;;
+          esac
+
+  # Prove the stale-if-error and snapshot fallback: with every request
+  # sent to a dead proxy and an empty cache, the snapshot answers.
+  network-down:
+    name: "Test with the network down"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        if: runner.os == 'Linux'
+        with:
+          config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
+
+      - name: 'Harden runner (block)'
+        if: runner.os == 'Linux'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: "Checkout repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Warms the Go module and toolchain caches, so the next build
+      # needs no network.
+      - name: "Matrix: python, network up"
+        uses: $/
+        with:
+          tool: python
+
+      - name: "Matrix: python, network down"
+        id: down
+        uses: $/
+        env:
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ''
+          SUPPORTED_VERSIONS_CACHE_DIR: ${{ runner.temp }}/empty-cache
+        with:
+          tool: python
+          network_timeout: '2'
+          max_retries: '0'
+
+      - name: "Check: the snapshot answered"
+        shell: bash
+        env:
+          SOURCE: ${{ steps.down.outputs.versions_source }}
+        run: |
+          # Check: the snapshot answered
+          case "$SOURCE" in
+            snapshot:*) echo "versions_source: $SOURCE" ;;
+            *) echo "::error::versions_source '$SOURCE', want snapshot:*"
+              exit 1 ;;
+          esac
+
+  # Design section 9: the block-mode job. The runner cache under
+  # RUNNER_TEMP starts empty, so the first run fetches live facts and
+  # the second is served from the cache.
+  egress-block:
+    name: "Test under egress block"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        with:
+          config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
+
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
@@ -50,41 +420,27 @@ jobs:
         with:
           persist-credentials: false
 
-      # Perform setup prior to running test(s)
-      - name: "Testing setup step"
-        shell: bash
-        run: |
-          # Testing setup step
-          echo "Testing setup step"
-          echo "Testing setup step/summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Running local action: ${{ github.repository }}"
+      - name: "Matrix: python, first run"
+        id: first
         uses: $/
         with:
-          input: "test input 💬"
+          tool: python
 
-      - name: "Validated local action: ${{ github.repository }}"
+      - name: "Matrix: python, second run"
+        id: second
+        uses: $/
+        with:
+          tool: python
+
+      - name: "Check: live, then cache"
         shell: bash
         env:
-          REPO: ${{ github.repository }}
+          FIRST: ${{ steps.first.outputs.versions_source }}
+          SECOND: ${{ steps.second.outputs.versions_source }}
         run: |
-          # Local action validation
-          echo "Validated local action: $REPO"
-          echo "Validation step summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      # yamllint disable-line rule:line-length
-      - name: "Running local action: ${{ github.repository }} [Override Failure]"
-        uses: $/
-        id: failure
-        continue-on-error: true
-        with:
-          invalid_input: "Some garbage"
-
-      # Failure testing is also important
-      - name: "Error if step above did NOT fail"
-        if: steps.failure.outcome == 'success'
-        shell: bash
-        run: |
-          # Error if step above did NOT fail
-          echo "Error: previous test step did NOT fail ❌"
-          exit 1
+          # Check: live, then cache
+          echo "first: $FIRST; second: $SECOND"
+          if [ "$FIRST" != live ] || [ "$SECOND" != cache ]; then
+            echo "::error::versions_source: want live, then cache"
+            exit 1
+          fi
