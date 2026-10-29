@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -107,15 +108,18 @@ func TestGitHubMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("report mode = %v, want 0600", fi.Mode().Perm())
-	}
 	di, err := os.Stat(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if di.Mode().Perm() != 0o700 {
-		t.Errorf("report directory mode = %v, want 0700", di.Mode().Perm())
+	// Windows has no Unix permission bits to check.
+	if runtime.GOOS != "windows" {
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("report mode = %v, want 0600", fi.Mode().Perm())
+		}
+		if di.Mode().Perm() != 0o700 {
+			t.Errorf("report directory mode = %v, want 0700", di.Mode().Perm())
+		}
 	}
 	validReport(t, []byte(readFile(t, path)))
 
