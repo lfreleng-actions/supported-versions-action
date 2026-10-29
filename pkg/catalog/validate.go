@@ -121,6 +121,28 @@ func validatePolicy(p Policy, base, scheme string, checkLine func(path, line, sc
 	if p.Floor != "" && p.Ceiling != "" && floorOK && ceilingOK && release.CompareLines(p.Floor, p.Ceiling) > 0 {
 		add(fieldErrorf(base+".floor", "%q is above ceiling %q", p.Floor, p.Ceiling))
 	}
+	validateLabels(p.Labels, base+".labels", scheme, add)
+}
+
+// validateLabels rejects a label that reads as a version, under the
+// tool's scheme or as a major line, since it would sit in the matrix
+// beside the release lines, and a label repeated within one policy.
+func validateLabels(labels []string, base, scheme string, add func(*FieldError)) {
+	seen := make(map[string]int, len(labels))
+	for i, l := range labels {
+		path := fmt.Sprintf("%s[%d]", base, i)
+		if prev, dup := seen[l]; dup {
+			add(fieldErrorf(path, "%q duplicates labels[%d]", l, prev))
+			continue
+		}
+		seen[l] = i
+		for _, sch := range []string{scheme, release.SchemeMajor} {
+			if _, err := release.Parse(sch, l); err == nil {
+				add(fieldErrorf(path, "%q reads as a version, not a label", l))
+				break
+			}
+		}
+	}
 }
 
 func sortedKeys[V any](m map[string]V) []string {

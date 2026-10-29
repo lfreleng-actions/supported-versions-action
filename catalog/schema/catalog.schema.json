@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/catalog.schema.json",
   "title": "supported-versions-action tool catalog",
-  "description": "Defines every tool once: its identity, where its release facts come from, how projects declare constraints on it, and the policy that selects its supported lines. Checks a schema cannot express (alias uniqueness, line formats, floor <= ceiling, field dependencies, compatibility references) are applied by pkg/catalog.",
+  "description": "Defines every tool once: its identity, where its release facts come from, how projects declare constraints on it, and the policy that selects its supported lines. Checks a schema cannot express (alias uniqueness, line formats, floor <= ceiling, field dependencies, compatibility references, version-like and duplicate labels) are applied by pkg/catalog.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "tools"],
@@ -22,6 +22,11 @@
     "nonEmptyString": {
       "type": "string",
       "minLength": 1
+    },
+    "label": {
+      "description": "A channel label appended to the matrix after the release lines; lower case, starting with a letter. pkg/catalog also rejects a label that parses as a version and duplicate labels.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]{0,31}$"
     },
     "line": {
       "description": "A release line; its format per version_scheme is checked by pkg/catalog.",
@@ -222,7 +227,7 @@
         "warn_days_before_eol": {"type": "integer", "minimum": 0},
         "labels": {
           "type": "array",
-          "items": {"$ref": "#/$defs/nonEmptyString"}
+          "items": {"$ref": "#/$defs/label"}
         }
       }
     },
