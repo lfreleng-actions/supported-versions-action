@@ -27,7 +27,7 @@ jobs:
       contents: read
       pull-requests: read  # repository-metadata-action reads PR data
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/go-workflows/.github/workflows/build-test.yaml@5b0bd5b4be9988151cc25c245eb858eb0b6dbd10  # v0.6.5
+    uses: lfreleng-actions/go-workflows/.github/workflows/build-test.yaml@30c99fc8a00906d80a65800e6233088811e72982  # v0.6.7
     with:
       lint_version: 'v2.15.0'  # the version this repository already uses
 
@@ -50,10 +50,10 @@ jobs:
       # organisation's .github repository and publish it as
       # $CONNECTION_ALLOW_LIST for the harden-runner step below.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         if: runner.os == 'Linux'
         with:
-          config: '@56d70f0eae78f334a598d1ffe071d4b821517b22'  # v0.17.1
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
 
       # Harden the runner with the just-loaded allow-list.
       - name: 'Harden runner (block)'
@@ -83,7 +83,7 @@ jobs:
 
       - name: "Run Go tests"
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/go-test-action@df1cb722d651b1bf4476fddb221e05a88629072a  # v0.1.2
+        uses: lfreleng-actions/go-test-action@b609109b7be8a2bf957b47600211f35bed1c8301  # v0.1.4
         with:
           go_version_file: 'go.mod'
           race: true
