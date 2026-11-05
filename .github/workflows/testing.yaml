@@ -185,6 +185,86 @@ jobs:
           [ "$origin" = "package.json:engines.node" ] ||
             fail "constraint origin '$origin' is not package.json:engines.node"
 
+      # Written at run time: a pom.xml in the repository would make
+      # the Java tooling and dependency scanners treat it as a project.
+      - name: "Write the java fixture"
+        shell: bash
+        run: |
+          # Write the java fixture
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/java-fixture"
+          cat > "$RUNNER_TEMP/java-fixture/pom.xml" << 'EOF'
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <properties>
+              <java.version>17</java.version>
+              <maven.compiler.release>${java.version}</maven.compiler.release>
+            </properties>
+          </project>
+          EOF
+
+      - name: "Matrix: jdk alias, detected constraint"
+        id: java
+        uses: $/
+        with:
+          tool: jdk
+          path_prefix: ${{ runner.temp }}/java-fixture
+
+      - name: "Check: java matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.java.outputs.matrix_json }}
+          LATEST: ${{ steps.java.outputs.latest }}
+          REPORT: ${{ steps.java.outputs.report_path }}
+        run: |
+          # Check: java matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          [ "$(jqr -c 'keys' <<< "$MATRIX_JSON")" = '["java-version"]' ] ||
+            fail "matrix_json keys are not exactly java-version"
+          jq -e '.["java-version"] | length > 0 and all(test("^[0-9]+$"))' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json is empty or holds a line that is not a major"
+          jq -e '.["java-version"] | all(tonumber >= 17)' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json holds a line below 17"
+          last=$(jqr '.["java-version"][-1]' <<< "$MATRIX_JSON")
+          [ "$LATEST" = "$last" ] || fail "latest '$LATEST' is not '$last'"
+          report_file="${REPORT//\\//}"
+          [ "$(jqr '.tool' "$report_file")" = java ] ||
+            fail "the report's tool is not java"
+          origin=$(jqr '.constraint.origin' "$report_file")
+          want="pom.xml:/project/properties/maven.compiler.release"
+          [ "$origin" = "$want" ] ||
+            fail "constraint origin '$origin' is not $want"
+
+      - name: "Check: java 11"
+        id: java-check
+        uses: $/
+        with:
+          tool: java
+          mode: check
+          version: '11'
+
+      - name: "Check: java 11 outputs"
+        shell: bash
+        env:
+          SUPPORTED: ${{ steps.java-check.outputs.supported }}
+          EXCLUDED: ${{ steps.java-check.outputs.policy_excluded }}
+        run: |
+          # Check: java 11 outputs
+          set -euo pipefail
+          # Java 11 is supported upstream but below the floor of 17.
+          if [ "$SUPPORTED" != false ] || [ "$EXCLUDED" != true ]; then
+            echo "::error::supported=$SUPPORTED policy_excluded=$EXCLUDED"
+            exit 1
+          fi
+
       - name: "Matrix: python, matrix_key"
         id: key
         uses: $/
