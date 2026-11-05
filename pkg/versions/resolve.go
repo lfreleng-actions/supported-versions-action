@@ -36,6 +36,9 @@ type projectConstraint struct {
 	text     string
 	origin   string
 	warnings []string
+	// alias is an nvm alias detection found, resolved once the facts
+	// are gathered.
+	alias string
 }
 
 // Matrix resolves the matrix of tool, an id or alias, for the project
@@ -67,6 +70,14 @@ func (r *Resolver) Matrix(ctx context.Context, tool string, req MatrixRequest) (
 
 	rep := r.report(id, t, f, res, now)
 	rep.Warnings = append(rep.Warnings, pc.warnings...)
+	if pc.alias != "" {
+		c, err := resolveAlias(t.VersionScheme, f.facts, pc.alias, now)
+		if err != nil {
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+				"%s: %v; the matrix is unconstrained", pc.origin, err))
+		}
+		pc.c = c
+	}
 	lines, outcome := constraint.Apply(res.Matrix, pc.c)
 	var strictErr error
 	if outcome != constraint.OutcomeNone {
@@ -101,7 +112,9 @@ func (r *Resolver) constraintFor(t catalog.Tool, req MatrixRequest) (projectCons
 		if err != nil {
 			return projectConstraint{}, err
 		}
-		return projectConstraint{c: d.Constraint, text: d.Text, origin: d.Origin, warnings: d.Warnings}, nil
+		return projectConstraint{
+			c: d.Constraint, text: d.Text, origin: d.Origin, warnings: d.Warnings, alias: d.Alias,
+		}, nil
 	default:
 		return projectConstraint{}, nil
 	}
