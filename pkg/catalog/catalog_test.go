@@ -31,7 +31,7 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", python}; !reflect.DeepEqual(got, want) {
+	if got, want := c.IDs(), []string{"go", "nodejs", python}; !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -40,6 +40,7 @@ func TestEmbedded(t *testing.T) {
 		"PYTHON":  python,
 		"cpython": python,
 		"go":      "go",
+		"node":    "nodejs",
 	} {
 		id, tool, ok := c.Lookup(name)
 		if !ok || id != want || tool.Name == "" {
