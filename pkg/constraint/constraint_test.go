@@ -229,7 +229,7 @@ func TestParseErrors(t *testing.T) {
 }
 
 func TestParseUnknownSyntaxOrScheme(t *testing.T) {
-	if _, err := constraint.Parse("maven-range", release.SchemeMajorMinor, "[1,2)"); err == nil {
+	if _, err := constraint.Parse("gradle-range", release.SchemeMajorMinor, "[1,2)"); err == nil {
 		t.Error("unsupported syntax: no error")
 	}
 	if _, err := constraint.Parse(constraint.SyntaxPEP440, "calendar", ">=3"); err == nil {
