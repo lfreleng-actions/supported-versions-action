@@ -134,7 +134,8 @@ func (r *Resolver) Check(ctx context.Context, tool, version string) (Report, err
 	if err != nil {
 		return Report{}, err
 	}
-	v, err := release.Parse(t.VersionScheme, version)
+	checked := checkedVersion(t, version)
+	v, err := release.Parse(t.VersionScheme, checked)
 	if err != nil {
 		return Report{}, err
 	}
@@ -152,7 +153,7 @@ func (r *Resolver) Check(ctx context.Context, tool, version string) (Report, err
 	if err != nil && !errors.Is(err, policy.ErrEOL) {
 		return Report{}, err
 	}
-	cr, err := policy.Check(res, t.VersionScheme, version)
+	cr, err := policy.Check(res, t.VersionScheme, checked)
 	if err != nil {
 		return Report{}, err
 	}
@@ -170,6 +171,26 @@ func (r *Resolver) Check(ctx context.Context, tool, version string) (Report, err
 		DaysToEOL:      cr.DaysToEOL,
 	}
 	return rep, nil
+}
+
+// checkedVersion returns the version Check reads for tool t. Under the
+// java-release syntax, Java names releases 8 and earlier "1.N", which
+// the version scheme alone reads as another line; such a version is
+// read as the release the syntax names, so 1.8 checks Java 8. Any
+// other version, and any other tool's, is returned unchanged.
+func checkedVersion(t catalog.Tool, version string) string {
+	if t.Constraints == nil || t.Constraints.Syntax != constraint.SyntaxJavaRelease {
+		return version
+	}
+	v, err := release.Parse(t.VersionScheme, version)
+	if err != nil {
+		return version
+	}
+	feature, err := constraint.JavaRelease(version)
+	if err != nil || feature == v.Line {
+		return version
+	}
+	return feature
 }
 
 func (r *Resolver) evaluate(t catalog.Tool, f facts, now time.Time) (policy.Result, error) {
