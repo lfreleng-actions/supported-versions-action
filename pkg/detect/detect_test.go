@@ -681,7 +681,7 @@ func TestUnsupportedRules(t *testing.T) {
 	for name, rule := range map[string]catalog.DetectRule{
 		"xpath":     {File: "pom.xml", XPath: "/project/properties/java.version"},
 		"key":       {File: "gradle.properties", Key: "javaVersion"},
-		"field":     {File: "package.json", Field: "engines.node"},
+		"field":     {File: "build.gradle", Field: "java.toolchain"},
 		"directive": {File: fileGoMod, Directive: "module"},
 	} {
 		t.Run(name, func(t *testing.T) {

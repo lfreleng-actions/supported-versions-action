@@ -12,7 +12,7 @@ description: >-
 
 inputs:
   tool:
-    description: "Catalog tool id or alias, for example python or go"
+    description: "Catalog tool id or alias, for example python, go or node"
     required: true
   mode:
     description: "Command to run: matrix, check or list"

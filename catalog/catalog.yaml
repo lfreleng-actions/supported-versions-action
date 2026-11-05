@@ -53,3 +53,22 @@ tools:
     policy:
       rule: all
       admit: installable
+
+  nodejs:
+    name: Node.js
+    aliases: [node]
+    version_scheme: major
+    matrix_key: node-version
+    sources:
+      - {type: endoflife, product: nodejs}
+      - {type: actions-manifest, repository: actions/node-versions}
+    constraints:
+      syntax: semver-range
+      detect:
+        - {file: package.json, field: engines.node}
+        - {file: .nvmrc}
+        - {file: .node-version}
+    policy:
+      rule: lts
+      current: false
+      admit: installable

@@ -10,7 +10,7 @@
 [![Linux Foundation](https://img.shields.io/badge/Linux-Foundation-blue)](https://linuxfoundation.org/) [![Source Code](https://img.shields.io/badge/GitHub-100000?logo=github&logoColor=white&color=blue)](https://github.com/lfreleng-actions/actions-template) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![pre-commit.ci status badge]][pre-commit.ci results page] [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lfreleng-actions/actions-template/badge)](https://scorecard.dev/viewer/?uri=github.com/lfreleng-actions/actions-template)
 <!-- prettier-ignore-end -->
 
-Resolves the supported release lines of a tool, such as Python or Go,
+Resolves the supported release lines of a tool, such as Python, Go or Node.js,
 from its upstream release facts and the organisation's catalog policy.
 It produces a build matrix, checks whether a project may still use one
 version, or lists a tool's release lines.
@@ -18,6 +18,26 @@ version, or lists a tool's release lines.
 The action builds the `supported-versions` command-line tool from its
 own source and runs it with `--format github`; the tool writes every
 output, annotation and job summary.
+
+## Supported Tools
+
+<!-- markdownlint-disable MD013 -->
+
+| Tool    | ID       | Aliases                    | Matrix key       | Lines in the matrix | Constraint detected from                                     |
+| ------- | -------- | -------------------------- | ---------------- | ------------------- | ------------------------------------------------------------ |
+| Python  | `python` | `cpython`, `python3`, `py` | `python-version` | Supported from 3.11 | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version` |
+| Go      | `go`     | `golang`                   | `go-version`     | Supported           | `go.mod` (`go` and `toolchain` directives)                   |
+| Node.js | `nodejs` | `node`                     | `node-version`   | Supported LTS lines | `package.json` (`engines.node`), `.nvmrc`, `.node-version`   |
+
+<!-- markdownlint-enable MD013 -->
+
+The catalog in [`catalog/catalog.yaml`](catalog/catalog.yaml) defines
+each tool; a matrix holds the lines GitHub runners can install. Node.js
+constraints use the npm semver range syntax, such as
+`^20.19.0 || >=22.12.0`. An `.nvmrc` or `.node-version` may name the
+nvm aliases `node`, `stable`, `lts/*` or `lts/-N`, which resolve to a
+line from the release facts. A codename alias such as `lts/jod` stays
+unresolved: the action warns and leaves the matrix unconstrained.
 
 ## Usage Example
 
@@ -51,6 +71,25 @@ jobs:
           python-version: ${{ matrix.python-version }}
 ```
 
+The same works for Node.js, narrowed by `engines.node` in
+`package.json`, or by `.nvmrc` or `.node-version`:
+
+```yaml
+- name: "Supported Node.js versions"
+  id: node-versions
+  uses: lfreleng-actions/supported-versions-action@main
+  with:
+    tool: node
+```
+
+The test job then sets up each line of the matrix:
+
+```yaml
+- uses: actions/setup-node@v6
+  with:
+    node-version: ${{ matrix.node-version }}
+```
+
 Fail a job that pins a version that is no longer supported:
 
 ```yaml
@@ -74,7 +113,7 @@ Pin the action and any other action to a commit SHA in real workflows.
 
 | Name                | Required | Default  | Description                                                                                                       |
 | ------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| tool                | True     |          | Catalog tool id or alias, for example `python` or `go`                                                            |
+| tool                | True     |          | Catalog tool id or alias, for example `python`, `go` or `node`                                                    |
 | mode                | False    | `matrix` | `matrix`, `check` or `list` (the release lines of `tool`); any other value fails                                  |
 | version             | False    |          | Version to check; required in `check` mode and rejected in the others                                             |
 | constraint          | False    |          | Constraint applied to the matrix; wins over `path_prefix`; in `matrix` mode                                       |

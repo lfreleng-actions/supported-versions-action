@@ -10,11 +10,14 @@
 package detect
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 
@@ -51,9 +54,32 @@ type Detection struct {
 	// where the rule has one, the locator within it, separated by a
 	// colon.
 	Origin string
+	// Alias is an nvm alias, such as "lts/*", that a version file
+	// named instead of a version. Only the release facts can resolve
+	// it, so Found is false and Constraint nil; Text and Origin name
+	// the alias and where it was found.
+	Alias string
 	// Warnings are problems that did not stop detection, such as a
 	// version file naming something other than a version.
 	Warnings []string
+}
+
+// nvmFiles are the version files that may name an nvm alias.
+var nvmFiles = map[string]bool{".nvmrc": true, ".node-version": true}
+
+// nvmAlias reports whether s is an nvm alias naming a release line:
+// "node", "stable", "lts/*", "lts/-N" or "lts/<codename>". It returns
+// the alias in lower case.
+func nvmAlias(s string) (string, bool) {
+	s = strings.ToLower(s)
+	switch {
+	case s == "node", s == "stable":
+		return s, true
+	case strings.HasPrefix(s, "lts/") && len(s) > len("lts/"):
+		return s, true
+	default:
+		return "", false
+	}
 }
 
 // finding is a value a rule located.
@@ -65,21 +91,29 @@ type finding struct {
 	// no constraint but is worth a warning before later rules are
 	// tried.
 	empty bool
+	// alias is an nvm alias a version file named.
+	alias string
 }
 
 // Detect finds the constraint the project in dir declares for tool. It
 // tries the tool's detect rules in catalog order, and the first rule
 // that yields a value wins. Finding nothing is not an error: the
-// result has Found false. A value that is empty, or nothing but commas
-// and whitespace, declares no constraint: from any rule it counts as
-// absent, and the next rule is tried, as setuptools falls back to
-// setup.py when setup.cfg's python_requires is empty. A setup.cfg
-// option declared explicitly empty still hides any [DEFAULT] value,
-// and adds a warning.
+// result has Found false. A blank value declares no constraint, and
+// outside a JSON field neither does one holding nothing but commas
+// and whitespace; in a JSON field such as engines.node commas are not
+// a separator, so that value is a syntax error. A value declaring no
+// constraint counts as absent, and the next rule is tried, as
+// setuptools falls back to setup.py when setup.cfg's python_requires
+// is empty. A setup.cfg option declared explicitly empty still hides
+// any [DEFAULT] value, and adds a warning.
 //
 // A value that is found but does not parse is an error naming its
 // origin, and later rules are not tried, because a broken constraint
 // should be fixed rather than silently replaced.
+//
+// An nvm alias in .nvmrc or .node-version, such as "lts/*", also wins:
+// the result has Alias set, Found false and no constraint, and the
+// caller resolves the alias from the release facts.
 func Detect(dir string, tool catalog.Tool) (Detection, error) {
 	var d Detection
 	if tool.Constraints == nil || len(tool.Constraints.Detect) == 0 {
@@ -105,6 +139,10 @@ func Detect(dir string, tool catalog.Tool) (Detection, error) {
 		if f.empty {
 			d.Warnings = append(d.Warnings, origin+": declared empty; trying later rules")
 			continue
+		}
+		if f.alias != "" {
+			d.Alias, d.Text, d.Origin = f.alias, f.alias, origin
+			return d, nil
 		}
 		var c constraint.Constraint
 		if f.lines != nil {
@@ -267,6 +305,8 @@ func (p *project) field(rule catalog.DetectRule, origin string) (*finding, error
 		return p.tomlField(rule, origin)
 	case strings.HasSuffix(name, ".cfg"), strings.HasSuffix(name, ".ini"):
 		return p.iniField(rule, origin)
+	case strings.HasSuffix(name, ".json"):
+		return p.jsonField(rule, origin)
 	default:
 		return nil, fmt.Errorf("%w: %s: no field reader for this file type", ErrUnsupportedRule, origin)
 	}
@@ -294,6 +334,37 @@ func (p *project) tomlField(rule catalog.DetectRule, origin string) (*finding, e
 	default:
 		return nil, fmt.Errorf("%s: unsupported value of type %T", origin, v)
 	}
+}
+
+// jsonField reads a string at a dotted path of nested JSON objects,
+// such as package.json's engines.node.
+func (p *project) jsonField(rule catalog.DetectRule, origin string) (*finding, error) {
+	data, exists, err := p.read(rule.File)
+	if err != nil || !exists {
+		return nil, err
+	}
+	var doc map[string]any
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", rule.File, err)
+	}
+	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse %s: data after the top-level value", rule.File)
+	}
+	v, ok := lookup(doc, rule.Field)
+	if !ok || v == nil {
+		return nil, nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("%s: unsupported value of type %T", origin, v)
+	}
+	// Commas separate nothing in a semver range, so only a blank
+	// string is absent; text would also drop a comma-only one.
+	if s = strings.TrimSpace(s); s == "" {
+		return nil, nil
+	}
+	return &finding{text: s}, nil
 }
 
 // lineGroup matches a dotted number standing for a release line in a
@@ -396,8 +467,10 @@ func (p *project) directive(rule catalog.DetectRule, origin string) (*finding, e
 
 // versionFile reads a file naming one version on its first line that
 // is neither empty nor a comment, and yields an exact match on its
-// release line. A first line that is not a version under the scheme,
-// such as an interpreter name, yields nothing and adds a warning.
+// release line. In .nvmrc and .node-version that line may instead name
+// an nvm alias, which is yielded as found. A first line that is not a
+// version under the scheme, such as an interpreter name, yields
+// nothing and adds a warning.
 func (p *project) versionFile(rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
 	data, exists, err := p.read(rule.File)
 	if err != nil || !exists {
@@ -408,12 +481,19 @@ func (p *project) versionFile(rule catalog.DetectRule, origin string, warnings *
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		if nvmFiles[path.Base(rule.File)] {
+			if a, ok := nvmAlias(line); ok {
+				return &finding{text: a, alias: a}, nil
+			}
+		}
 		v, err := release.Parse(p.scheme, line)
 		if err != nil {
 			*warnings = append(*warnings, fmt.Sprintf("%s: ignoring %q: %v", origin, line, err))
 			return nil, nil
 		}
-		return &finding{text: "==" + v.Line}, nil
+		// A line set, not constraint text, so the match holds whatever
+		// the tool's constraint syntax.
+		return &finding{text: "==" + v.Line, lines: []string{v.Line}}, nil
 	}
 	return nil, nil
 }
