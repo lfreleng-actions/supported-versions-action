@@ -265,6 +265,63 @@ jobs:
             exit 1
           fi
 
+      - name: "Write the maven fixture"
+        shell: bash
+        run: |
+          # Write the maven fixture
+          set -euo pipefail
+          dir="$RUNNER_TEMP/maven-fixture/.mvn/wrapper"
+          mkdir -p "$dir"
+          base="https\\://repo.maven.apache.org/maven2/org/apache/maven"
+          printf 'distributionUrl=%s/apache-maven/3.9.6/%s\n' \
+            "$base" "apache-maven-3.9.6-bin.zip" \
+            > "$dir/maven-wrapper.properties"
+          cat "$dir/maven-wrapper.properties"
+
+      - name: "Matrix: mvn alias, detected constraint"
+        id: maven
+        uses: $/
+        with:
+          tool: mvn
+          path_prefix: ${{ runner.temp }}/maven-fixture
+
+      - name: "Check: maven matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.maven.outputs.matrix_json }}
+          LATEST: ${{ steps.maven.outputs.latest }}
+          REPORT: ${{ steps.maven.outputs.report_path }}
+        run: |
+          # Check: maven matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          [ "$(jqr -c 'keys' <<< "$MATRIX_JSON")" = '["maven-version"]' ] ||
+            fail "matrix_json keys are not exactly maven-version"
+          jq -e '.["maven-version"] | length > 0 and
+            all(test("^[0-9]+\\.[0-9]+$"))' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json is empty or holds a line that is not major.minor"
+          # The wrapper names 3.9.6, which keeps 3.9 and newer.
+          jq -e '.["maven-version"] |
+            all(split(".") | map(tonumber) >= [3, 9])' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json holds a line below 3.9"
+          last=$(jqr '.["maven-version"][-1]' <<< "$MATRIX_JSON")
+          [ "$LATEST" = "$last" ] || fail "latest '$LATEST' is not '$last'"
+          report_file="${REPORT//\\//}"
+          [ "$(jqr '.tool' "$report_file")" = maven ] ||
+            fail "the report's tool is not maven"
+          origin=$(jqr '.constraint.origin' "$report_file")
+          want=".mvn/wrapper/maven-wrapper.properties"
+          [ "$origin" = "$want" ] ||
+            fail "constraint origin '$origin' is not $want"
+
       - name: "Matrix: python, matrix_key"
         id: key
         uses: $/
