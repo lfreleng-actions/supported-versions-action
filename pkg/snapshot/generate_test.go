@@ -69,7 +69,8 @@ tools:
 var routes = map[string]string{
 	alphaPath: `{"schema_version":"1.2.1","result":{"name":"alpha","releases":[
 {"name":"2.1","releaseDate":"2026-01-02","isLts":false,"isEoas":false,"eoasFrom":null,"isEol":false,"eolFrom":"2028-01-02","latest":{"name":"2.1.3","date":"2026-09-01"}},
-{"name":"2.0","releaseDate":"2025-01-02","isEol":true,"eolFrom":"2026-06-01","isEoes":false,"eoesFrom":"2027-06-01"}]}}`,
+{"name":"2.0","releaseDate":"2025-01-02","isEol":true,"eolFrom":"2026-06-01","isEoes":false,"eoesFrom":"2027-06-01"},
+{"name":"1","releaseDate":"2001-01-02","isEol":true}]}}`,
 	betaPath: `{"schema_version":"1.2.1","result":{"name":"beta","releases":[
 {"name":"1.0","isLts":true}]}}`,
 	sharedPath: `[

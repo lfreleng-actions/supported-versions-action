@@ -21,7 +21,8 @@ import (
 // Generate fetches every endoflife, actions-manifest and adoptium
 // source of the catalog's tools, in cat.IDs() order, and returns their snapshot.
 // Manifests are reduced to lines under the version scheme of the first
-// tool naming them. A source two tools share is fetched once. Other
+// tool naming them, and endoflife products keep only the lines valid
+// under it. A source two tools share is fetched once. Other
 // source types are skipped. Any fetch error fails the whole generation,
 // so a partial snapshot is never returned. GeneratedAt is now(), or
 // time.Now when now is nil.
@@ -46,7 +47,10 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 				if err != nil {
 					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
 				}
-				s.EndOfLife[src.Product] = Product{FetchedAt: stamp(res.FetchedAt), Releases: facts}
+				s.EndOfLife[src.Product] = Product{
+					FetchedAt: stamp(res.FetchedAt),
+					Releases:  release.OnScheme(facts, tool.VersionScheme),
+				}
 			case TypeActionsManifest:
 				if _, done := s.ActionsManifest[src.Repository]; done {
 					continue

@@ -82,7 +82,7 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source, line string) fetched {
 	switch src.Type {
 	case snapshot.TypeEndOfLife:
-		return r.fetchEndOfLife(ctx, src.Product, line)
+		return r.fetchEndOfLife(ctx, scheme, src.Product, line)
 	case snapshot.TypeActionsManifest:
 		return r.fetchManifest(ctx, scheme, src.Repository, line)
 	case snapshot.TypeAdoptium:
@@ -92,7 +92,9 @@ func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source,
 	}
 }
 
-func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fetched {
+// fetchEndOfLife reads the lifecycle facts of product, keeping only
+// the lines valid under scheme.
+func (r *Resolver) fetchEndOfLife(ctx context.Context, scheme, product, line string) fetched {
 	out := fetched{entry: SourceEntry{Type: snapshot.TypeEndOfLife, Ref: product}}
 	var (
 		res source.Result
@@ -116,6 +118,7 @@ func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fet
 	}
 	switch {
 	case err == nil:
+		out.facts = release.OnScheme(out.facts, scheme)
 		out.entry.Kind = Kind(res.Source)
 		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
 		out.warnings = res.Warnings
@@ -125,6 +128,7 @@ func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fet
 		return out
 	}
 	all, fetchedAt, found := r.snapshot.Facts(product)
+	all = release.OnScheme(all, scheme)
 	if !found {
 		out.err = fmt.Errorf("%w for endoflife product %q: %w", ErrNoFacts, product, err)
 		return out

@@ -37,6 +37,21 @@ func TestValidLine(t *testing.T) {
 	}
 }
 
+func TestOnScheme(t *testing.T) {
+	facts := []Facts{{Line: lineThreeTen}, {Line: "2"}, {Line: lineThreeNine}, {Line: "1"}}
+	got := OnScheme(facts, SchemeMajorMinor)
+	if len(got) != 2 || got[0].Line != lineThreeTen || got[1].Line != lineThreeNine {
+		t.Errorf("OnScheme(major.minor) = %+v", got)
+	}
+	got = OnScheme(facts, SchemeMajor)
+	if len(got) != 2 || got[0].Line != "2" || got[1].Line != "1" {
+		t.Errorf("OnScheme(major) = %+v", got)
+	}
+	if got := OnScheme(nil, SchemeMajor); got == nil || len(got) != 0 {
+		t.Errorf("OnScheme(nil) = %#v, want empty", got)
+	}
+}
+
 func TestCompareLines(t *testing.T) {
 	tests := []struct {
 		a, b string

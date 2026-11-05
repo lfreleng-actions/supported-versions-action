@@ -38,6 +38,20 @@ func ValidLine(line, scheme string) bool {
 	return ok && re.MatchString(line)
 }
 
+// OnScheme returns the facts whose line is valid under scheme, in
+// their order. A feed may list lines from before a product adopted the
+// scheme, such as Maven's 1 and 2 beside its 3.9; they cannot be
+// compared with the others, so they are left out.
+func OnScheme(facts []Facts, scheme string) []Facts {
+	out := make([]Facts, 0, len(facts))
+	for _, f := range facts {
+		if ValidLine(f.Line, scheme) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // CompareLines compares two well-formed release lines numerically, so
 // that a minor of 9 sorts before a minor of 10, and returns -1, 0 or
 // +1. A missing component counts as zero. Components carry no leading
