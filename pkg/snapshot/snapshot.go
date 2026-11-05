@@ -6,9 +6,9 @@
 // and used when neither the network nor the cache can answer.
 //
 // The snapshot stores normalised data rather than raw response bodies:
-// the endoflife.date facts of each product, and the newest stable and
-// pre-release build of each line of each versions manifest. It is
-// small, and regenerating it produces diffs a reviewer can read.
+// the endoflife.date facts of each product, the newest stable and
+// pre-release build of each line of each versions manifest, and the
+// release lines Adoptium has builds of. It is small, and regenerating it produces diffs a reviewer can read.
 package snapshot
 
 import (
@@ -40,12 +40,14 @@ const (
 	// TypeActionsManifest is the catalog source type of a versions
 	// manifest of actions/setup-*.
 	TypeActionsManifest = "actions-manifest"
+	// TypeAdoptium is the catalog source type of the Adoptium API.
+	TypeAdoptium = "adoptium"
 )
 
 const day = 24 * time.Hour
 
 // Snapshot is the offline copy of the release facts of every
-// endoflife and actions-manifest source in the catalog.
+// endoflife, actions-manifest and adoptium source in the catalog.
 type Snapshot struct {
 	// Schema is the format version, always Schema.
 	Schema int
@@ -57,6 +59,18 @@ type Snapshot struct {
 	// ActionsManifest maps an owner/name repository to the lines of
 	// its versions manifest.
 	ActionsManifest map[string]Manifest
+	// Adoptium is the snapshot of the Adoptium API, or nil when the
+	// catalog has no adoptium source.
+	Adoptium *Adoptium
+}
+
+// Adoptium is the snapshot of the release lines Adoptium has builds of.
+type Adoptium struct {
+	// FetchedAt is when the releases were fetched, in UTC, to the
+	// second.
+	FetchedAt time.Time
+	// Lines are the available release lines in ascending line order.
+	Lines []string
 }
 
 // Product is the snapshot of one endoflife.date product.
@@ -104,6 +118,16 @@ func (s *Snapshot) Lines(repository string) (lines map[string]actionsmanifest.Li
 	return maps.Clone(m.Lines), m.FetchedAt, true
 }
 
+// AdoptiumLines returns the release lines Adoptium has builds of and
+// when they were fetched. found is false when the snapshot has no
+// Adoptium entry.
+func (s *Snapshot) AdoptiumLines() (lines []string, fetchedAt time.Time, found bool) {
+	if s.Adoptium == nil {
+		return nil, time.Time{}, false
+	}
+	return slices.Clone(s.Adoptium.Lines), s.Adoptium.FetchedAt, true
+}
+
 // Age returns how long before now the snapshot was generated.
 func (s *Snapshot) Age(now time.Time) time.Duration {
 	return now.Sub(s.GeneratedAt)
@@ -127,6 +151,12 @@ type wireSnapshot struct {
 	GeneratedAt     string                  `json:"generated_at"`
 	EndOfLife       map[string]wireProduct  `json:"endoflife"`
 	ActionsManifest map[string]wireManifest `json:"actions_manifest"`
+	Adoptium        *wireAdoptium           `json:"adoptium,omitempty"`
+}
+
+type wireAdoptium struct {
+	FetchedAt string   `json:"fetched_at"`
+	Lines     []string `json:"lines"`
 }
 
 type wireProduct struct {
@@ -192,6 +222,9 @@ func (s *Snapshot) Marshal() ([]byte, error) {
 		}
 		w.ActionsManifest[repo] = wm
 	}
+	if s.Adoptium != nil {
+		w.Adoptium = &wireAdoptium{FetchedAt: formatTime(s.Adoptium.FetchedAt), Lines: sortedLines(s.Adoptium.Lines)}
+	}
 	data, err := json.MarshalIndent(w, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("snapshot: %w", err)
@@ -254,6 +287,13 @@ func Parse(data []byte) (*Snapshot, error) {
 		}
 		s.ActionsManifest[repo] = m
 	}
+	if w.Adoptium != nil {
+		a := &Adoptium{Lines: sortedLines(w.Adoptium.Lines)}
+		if a.FetchedAt, err = parseTime("adoptium.fetched_at", w.Adoptium.FetchedAt); err != nil {
+			return nil, err
+		}
+		s.Adoptium = a
+	}
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
@@ -283,7 +323,28 @@ func (s *Snapshot) validate() error {
 			return fmt.Errorf("snapshot: actions_manifest.%s: empty line", repo)
 		}
 	}
+	if s.Adoptium != nil {
+		lines := sortedLines(s.Adoptium.Lines)
+		for i, l := range lines {
+			if l == "" {
+				return errors.New("snapshot: adoptium: empty line")
+			}
+			if i > 0 && release.CompareLines(lines[i-1], l) == 0 {
+				return fmt.Errorf("snapshot: adoptium: duplicate line %q", l)
+			}
+		}
+	}
 	return nil
+}
+
+// sortedLines returns a copy of lines in ascending line order.
+func sortedLines(lines []string) []string {
+	out := slices.Clone(lines)
+	if out == nil {
+		out = []string{}
+	}
+	slices.SortStableFunc(out, release.CompareLines)
+	return out
 }
 
 func toWire(f release.Facts) wireRelease {

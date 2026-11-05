@@ -89,7 +89,8 @@ type SourceSummary struct {
 type SourceEntry struct {
 	// Type is the catalog source type, for example "endoflife".
 	Type string `json:"type"`
-	// Ref names the upstream: an endoflife product or a repository.
+	// Ref names the upstream: an endoflife product, a repository or,
+	// for adoptium, the API host.
 	Ref string `json:"ref"`
 	// Kind is where the facts came from.
 	Kind Kind `json:"kind"`

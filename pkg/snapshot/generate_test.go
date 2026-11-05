@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 )
 
@@ -31,10 +33,11 @@ const (
 	productBeta  = "beta"
 	line20       = "2.0"
 	line21       = "2.1"
+	adoptiumPath = "/v3/info/available_releases"
 )
 
 // twoTools is a catalog of two tools with their own endoflife products
-// and one shared versions manifest.
+// and one shared versions manifest, and a third reading Adoptium.
 const twoTools = `schema: 1
 tools:
   alpha:
@@ -54,6 +57,13 @@ tools:
       - {type: actions-manifest, repository: owner/shared-versions}
       - {type: static, lines: [{line: "1.0"}]}
     policy: {rule: all, admit: installable}
+  gamma:
+    name: Gamma
+    version_scheme: major
+    matrix_key: gamma-version
+    sources:
+      - {type: adoptium}
+    policy: {rule: all, admit: installable}
 `
 
 var routes = map[string]string{
@@ -67,6 +77,7 @@ var routes = map[string]string{
 {"version":"2.1.3","stable":true,"files":[]},
 {"version":"2.1.10","stable":true,"files":[]},
 {"version":"2.0.9","stable":true,"files":[]}]`,
+	adoptiumPath: `{"available_lts_releases":[17,21],"available_releases":[17,21,9]}`,
 }
 
 // fixedNow is the clock every generation test uses.
@@ -99,7 +110,7 @@ func newUpstream(t *testing.T, routes map[string]string) *upstream {
 	return u
 }
 
-func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client) {
+func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client) {
 	opts.Sleep = func(context.Context, time.Duration) error { return nil }
 	opts.Retries = -1
 	opts.Now = func() time.Time { return fixedNow }
@@ -108,7 +119,9 @@ func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmani
 	eol.BaseURL = u.srv.URL + "/"
 	m := actionsmanifest.New(f)
 	m.BaseURL = u.srv.URL + "/"
-	return eol, m
+	a := adoptium.New(f)
+	a.BaseURL = u.srv.URL + "/"
+	return eol, m, a
 }
 
 func twoToolCatalog(t *testing.T) *catalog.Catalog {
@@ -125,8 +138,8 @@ func clock() time.Time { return fixedNow }
 func generate(t *testing.T, routes map[string]string) (*snapshot.Snapshot, *upstream) {
 	t.Helper()
 	u := newUpstream(t, routes)
-	eol, m := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, clock)
+	eol, m, a := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -183,6 +196,10 @@ func TestGenerate(t *testing.T) {
 	if n := u.hits[sharedPath]; n != 1 {
 		t.Errorf("shared manifest fetched %d times, want 1", n)
 	}
+	adoptiumLines, _, ok := s.AdoptiumLines()
+	if want := []string{"9", "17", "21"}; !ok || !slices.Equal(adoptiumLines, want) {
+		t.Errorf("AdoptiumLines() = %v, %v; want %v", adoptiumLines, ok, want)
+	}
 	if err := s.Check(twoToolCatalog(t)); err != nil {
 		t.Errorf("Check: %v", err)
 	}
@@ -212,14 +229,14 @@ func TestGenerateFailsOnAnyFetchError(t *testing.T) {
 		}
 	}
 	u := newUpstream(t, missing)
-	eol, m := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, clock)
+	eol, m, a := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
 	if !errors.Is(err, source.ErrNotFound) || s != nil {
 		t.Errorf("Generate with a 404 = %v, %v; want ErrNotFound and no snapshot", s, err)
 	}
 
-	eol, m = u.clients(source.Options{Offline: true})
-	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, clock)
+	eol, m, a = u.clients(source.Options{Offline: true})
+	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
 	if !errors.Is(err, source.ErrNoData) || s != nil {
 		t.Errorf("Generate offline = %v, %v; want ErrNoData and no snapshot", s, err)
 	}

@@ -16,14 +16,15 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 )
 
 // facts is what the sources of one tool supplied.
 type facts struct {
 	// facts are the lifecycle facts of every endoflife source.
 	facts []release.Facts
-	// availability merges every actions-manifest source; nil when the
-	// tool has none or none could be supplied.
+	// availability merges every actions-manifest and adoptium source;
+	// nil when the tool has none or none could be supplied.
 	availability map[string]policy.Build
 	// sources holds one entry per catalog source, in catalog order.
 	sources []SourceEntry
@@ -84,6 +85,8 @@ func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source,
 		return r.fetchEndOfLife(ctx, src.Product, line)
 	case snapshot.TypeActionsManifest:
 		return r.fetchManifest(ctx, scheme, src.Repository, line)
+	case snapshot.TypeAdoptium:
+		return r.fetchAdoptium(ctx, line)
 	default:
 		return fetched{err: fmt.Errorf("%w %q", ErrUnsupportedSource, src.Type)}
 	}
@@ -176,6 +179,46 @@ func (r *Resolver) fetchManifest(ctx context.Context, scheme, repo, line string)
 			continue
 		}
 		out.availability[l] = policy.Build{Stable: b.NewestStable, Prerelease: b.NewestPrerelease}
+	}
+	return out
+}
+
+// fetchAdoptium reads the lines Adoptium has builds of. Adoptium
+// names no versions, so each line's newest stable build is the line
+// itself, and the endoflife facts supply the newest version.
+func (r *Resolver) fetchAdoptium(ctx context.Context, line string) fetched {
+	out := fetched{entry: SourceEntry{Type: snapshot.TypeAdoptium, Ref: adoptium.Host}}
+	var lines []string
+	releases, res, err := r.adoptium.Releases(ctx)
+	switch {
+	case err == nil:
+		lines = releases.Lines()
+		out.entry.Kind = Kind(res.Source)
+		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
+		out.warnings = res.Warnings
+	case !errors.Is(err, source.ErrNoData):
+		out.err = err
+		return out
+	default:
+		var (
+			fetchedAt time.Time
+			found     bool
+		)
+		lines, fetchedAt, found = r.snapshot.AdoptiumLines()
+		if !found {
+			out.entry.Kind = KindUnavailable
+			return out
+		}
+		out.entry.Kind = KindSnapshot
+		out.entry.FetchedAt = timePtr(stamp(fetchedAt))
+		out.snapshot = true
+	}
+	out.availability = make(map[string]policy.Build, len(lines))
+	for _, l := range lines {
+		if line != "" && release.CompareLines(l, line) != 0 {
+			continue
+		}
+		out.availability[l] = policy.Build{Stable: l}
 	}
 	return out
 }

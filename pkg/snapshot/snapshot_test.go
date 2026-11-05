@@ -34,6 +34,7 @@ func sample() *snapshot.Snapshot {
 				line20: {NewestStable: "2.0.9"},
 			}},
 		},
+		Adoptium: &snapshot.Adoptium{FetchedAt: at, Lines: []string{"9", "17", "21"}},
 	}
 }
 
@@ -83,6 +84,13 @@ func TestParseRejects(t *testing.T) {
 			"releases": [{"line": "2.0"}, {"line": "2.0"}]}}, "actions_manifest": {}}`,
 		"duplicate manifest line": head + `"endoflife": {}, "actions_manifest": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z",
 			"lines": {"2.0": {"newest_stable": "2.0.1"}, "2.0": {"newest_stable": "2.0.2"}}}}}`,
+		"adoptium fetched_at": head + `"endoflife": {}, "actions_manifest": {}, "adoptium": {"fetched_at": "x", "lines": ["8"]}}`,
+		"adoptium field": head + `"endoflife": {}, "actions_manifest": {},
+			"adoptium": {"fetched_at": "2026-10-28T21:30:00Z", "lines": ["8"], "lts": [8]}}`,
+		"adoptium duplicate": head + `"endoflife": {}, "actions_manifest": {},
+			"adoptium": {"fetched_at": "2026-10-28T21:30:00Z", "lines": ["8", "17", "8"]}}`,
+		"adoptium empty line": head + `"endoflife": {}, "actions_manifest": {},
+			"adoptium": {"fetched_at": "2026-10-28T21:30:00Z", "lines": ["8", ""]}}`,
 		"trailing data": `{"schema": 1, "generated_at": "2026-10-28T21:30:00Z", "endoflife": {}, "actions_manifest": {}} {}`,
 	}
 	for name, data := range cases {
@@ -99,6 +107,7 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 	delete(s.EndOfLife, productBeta)
 	s.EndOfLife["gone"] = snapshot.Product{}
 	s.ActionsManifest[sharedRepo].Lines["2.x"] = actionsmanifest.Line{NewestStable: "2.9.0"}
+	s.Adoptium.Lines = append(s.Adoptium.Lines, line21)
 	err := s.Check(twoToolCatalog(t))
 	if err == nil {
 		t.Fatal("Check passed")
@@ -107,10 +116,41 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 		`endoflife product "beta" is missing`,
 		`endoflife product "gone" is not in the catalog`,
 		`line "2.x" is not valid under version scheme "major.minor"`,
+		`adoptium: line "2.1" is not valid under version scheme "major"`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Check error lacks %q:\n%v", want, err)
 		}
+	}
+}
+
+func TestCheckAdoptiumEntry(t *testing.T) {
+	s := sample()
+	s.Adoptium = nil
+	if err := s.Check(twoToolCatalog(t)); err == nil || !strings.Contains(err.Error(), "adoptium releases are missing") {
+		t.Errorf("Check without Adoptium = %v", err)
+	}
+	s = sample()
+	cat := twoToolCatalog(t)
+	delete(cat.Tools, "gamma")
+	if err := s.Check(cat); err == nil || !strings.Contains(err.Error(), "adoptium releases are not in the catalog") {
+		t.Errorf("Check with no adoptium tool = %v", err)
+	}
+}
+
+func TestNoAdoptiumOmitted(t *testing.T) {
+	s := sample()
+	s.Adoptium = nil
+	data, err := s.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "adoptium") {
+		t.Errorf("output names adoptium:\n%s", data)
+	}
+	got, err := snapshot.Parse(data)
+	if err != nil || got.Adoptium != nil {
+		t.Errorf("Parse = %+v, %v; want no Adoptium", got, err)
 	}
 }
 
@@ -136,6 +176,10 @@ func TestLookupsMissing(t *testing.T) {
 	}
 	if _, _, ok := s.Lines("owner/nope"); ok {
 		t.Error("Lines found an absent repository")
+	}
+	s.Adoptium = nil
+	if _, _, ok := s.AdoptiumLines(); ok {
+		t.Error("AdoptiumLines found an absent entry")
 	}
 }
 

@@ -76,6 +76,8 @@ type hooks struct {
 	endOfLifeBaseURL string
 	// manifestBaseURL overrides the versions manifest root.
 	manifestBaseURL string
+	// adoptiumBaseURL overrides the Adoptium API root.
+	adoptiumBaseURL string
 	// now overrides the clock.
 	now func() time.Time
 	// snapshot overrides the embedded snapshot.

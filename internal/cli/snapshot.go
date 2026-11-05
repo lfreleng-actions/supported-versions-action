@@ -12,6 +12,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 )
 
@@ -46,7 +47,9 @@ func (e *env) snapshotCmd(ctx context.Context, g *globals, args []string) error 
 	eol.BaseURL = e.hooks.endOfLifeBaseURL
 	manifests := actionsmanifest.New(fetcher)
 	manifests.BaseURL = e.hooks.manifestBaseURL
-	s, err := snapshot.Generate(ctx, cat, eol, manifests, e.hooks.now)
+	releases := adoptium.New(fetcher)
+	releases.BaseURL = e.hooks.adoptiumBaseURL
+	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, e.hooks.now)
 	if err != nil {
 		return err
 	}
