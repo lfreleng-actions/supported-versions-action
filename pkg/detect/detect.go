@@ -30,7 +30,8 @@ import (
 )
 
 // ErrUnsupportedRule reports a detect rule this package cannot apply
-// yet, such as an XPath or Key locator.
+// yet, such as a field in a file type it has no reader for, or an
+// XPath beyond an absolute element path.
 var ErrUnsupportedRule = errors.New("unsupported detect rule")
 
 // MaxFileSize is the largest file, in bytes, Detect reads. A larger
@@ -125,8 +126,8 @@ func Detect(dir string, tool catalog.Tool) (Detection, error) {
 	}
 	defer root.Close() //nolint:errcheck // Read-only; a close error loses nothing.
 
-	p := &project{root: root, scheme: tool.VersionScheme, files: map[string]file{}, tomls: map[string]map[string]any{}}
 	syntax := tool.Constraints.Syntax
+	p := &project{root: root, scheme: tool.VersionScheme, syntax: syntax, files: map[string]file{}, tomls: map[string]map[string]any{}}
 	for _, rule := range tool.Constraints.Detect {
 		origin := originOf(rule)
 		f, err := p.apply(rule, origin, &d.Warnings)
@@ -188,6 +189,8 @@ type file struct {
 type project struct {
 	root   *os.Root
 	scheme string
+	// syntax is the tool's constraint syntax.
+	syntax string
 	files  map[string]file
 	tomls  map[string]map[string]any
 }
@@ -195,8 +198,10 @@ type project struct {
 // apply runs one rule. It returns nil when the rule yields nothing.
 func (p *project) apply(rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
 	switch {
-	case rule.XPath != "", rule.Key != "":
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedRule, origin)
+	case rule.XPath != "":
+		return p.xpath(rule, origin, warnings)
+	case rule.Key != "":
+		return p.key(rule)
 	case rule.Field != "":
 		return p.field(rule, origin)
 	case rule.Classifiers != "":
@@ -470,7 +475,8 @@ func (p *project) directive(rule catalog.DetectRule, origin string) (*finding, e
 // release line. In .nvmrc and .node-version that line may instead name
 // an nvm alias, which is yielded as found. A first line that is not a
 // version under the scheme, such as an interpreter name, yields
-// nothing and adds a warning.
+// nothing and adds a warning. Under the java-release syntax the line is
+// read as Java names it, so .java-version may hold 1.8 or 17.0.13+11.
 func (p *project) versionFile(rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
 	data, exists, err := p.read(rule.File)
 	if err != nil || !exists {
@@ -486,14 +492,23 @@ func (p *project) versionFile(rule catalog.DetectRule, origin string, warnings *
 				return &finding{text: a, alias: a}, nil
 			}
 		}
-		v, err := release.Parse(p.scheme, line)
+		l, err := p.line(line)
 		if err != nil {
 			*warnings = append(*warnings, fmt.Sprintf("%s: ignoring %q: %v", origin, line, err))
 			return nil, nil
 		}
 		// A line set, not constraint text, so the match holds whatever
 		// the tool's constraint syntax.
-		return &finding{text: "==" + v.Line, lines: []string{v.Line}}, nil
+		return &finding{text: "==" + l, lines: []string{l}}, nil
 	}
 	return nil, nil
+}
+
+// line returns the release line a version file names.
+func (p *project) line(s string) (string, error) {
+	if p.syntax == constraint.SyntaxJavaRelease {
+		return constraint.JavaRelease(s)
+	}
+	v, err := release.Parse(p.scheme, s)
+	return v.Line, err
 }
