@@ -22,6 +22,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
 const (
@@ -34,10 +35,13 @@ const (
 	line20       = "2.0"
 	line21       = "2.1"
 	adoptiumPath = "/v3/info/available_releases"
+	deltaPath    = "/org/example/delta/maven-metadata.xml"
+	deltaID      = "org.example:delta"
 )
 
 // twoTools is a catalog of two tools with their own endoflife products
-// and one shared versions manifest, and a third reading Adoptium.
+// and one shared versions manifest, a third reading Adoptium and a
+// fourth reading Maven Central metadata.
 const twoTools = `schema: 1
 tools:
   alpha:
@@ -64,12 +68,20 @@ tools:
     sources:
       - {type: adoptium}
     policy: {rule: all, admit: installable}
+  delta:
+    name: Delta
+    version_scheme: major.minor
+    matrix_key: delta-version
+    sources:
+      - {type: maven-metadata, artifact: "org.example:delta"}
+    policy: {rule: all, admit: installable}
 `
 
 var routes = map[string]string{
 	alphaPath: `{"schema_version":"1.2.1","result":{"name":"alpha","releases":[
 {"name":"2.1","releaseDate":"2026-01-02","isLts":false,"isEoas":false,"eoasFrom":null,"isEol":false,"eolFrom":"2028-01-02","latest":{"name":"2.1.3","date":"2026-09-01"}},
-{"name":"2.0","releaseDate":"2025-01-02","isEol":true,"eolFrom":"2026-06-01","isEoes":false,"eoesFrom":"2027-06-01"}]}}`,
+{"name":"2.0","releaseDate":"2025-01-02","isEol":true,"eolFrom":"2026-06-01","isEoes":false,"eoesFrom":"2027-06-01"},
+{"name":"1","releaseDate":"2001-01-02","isEol":true}]}}`,
 	betaPath: `{"schema_version":"1.2.1","result":{"name":"beta","releases":[
 {"name":"1.0","isLts":true}]}}`,
 	sharedPath: `[
@@ -78,6 +90,10 @@ var routes = map[string]string{
 {"version":"2.1.10","stable":true,"files":[]},
 {"version":"2.0.9","stable":true,"files":[]}]`,
 	adoptiumPath: `{"available_lts_releases":[17,21],"available_releases":[17,21,9]}`,
+	deltaPath: `<metadata><versioning><versions>
+<version>1.0</version><version>1.1.0-M1</version><version>1.1.0</version><version>1.1.2</version>
+<version>2.0.0-alpha-1</version><version>2.0.0-rc-1</version><version>2.0.0-SNAPSHOT</version>
+</versions></versioning></metadata>`,
 }
 
 // fixedNow is the clock every generation test uses.
@@ -110,7 +126,7 @@ func newUpstream(t *testing.T, routes map[string]string) *upstream {
 	return u
 }
 
-func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client) {
+func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client) {
 	opts.Sleep = func(context.Context, time.Duration) error { return nil }
 	opts.Retries = -1
 	opts.Now = func() time.Time { return fixedNow }
@@ -121,7 +137,9 @@ func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmani
 	m.BaseURL = u.srv.URL + "/"
 	a := adoptium.New(f)
 	a.BaseURL = u.srv.URL + "/"
-	return eol, m, a
+	mm := mavenmeta.New(f)
+	mm.BaseURL = u.srv.URL + "/"
+	return eol, m, a, mm
 }
 
 func twoToolCatalog(t *testing.T) *catalog.Catalog {
@@ -138,8 +156,8 @@ func clock() time.Time { return fixedNow }
 func generate(t *testing.T, routes map[string]string) (*snapshot.Snapshot, *upstream) {
 	t.Helper()
 	u := newUpstream(t, routes)
-	eol, m, a := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
+	eol, m, a, mm := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -200,6 +218,15 @@ func TestGenerate(t *testing.T) {
 	if want := []string{"9", "17", "21"}; !ok || !slices.Equal(adoptiumLines, want) {
 		t.Errorf("AdoptiumLines() = %v, %v; want %v", adoptiumLines, ok, want)
 	}
+	mavenLines, _, ok := s.MavenLines(deltaID)
+	wantMaven := map[string]actionsmanifest.Line{
+		"1.0":  {NewestStable: "1.0"},
+		"1.1":  {NewestStable: "1.1.2", NewestPrerelease: "1.1.0-M1"},
+		line20: {NewestPrerelease: "2.0.0-rc-1"},
+	}
+	if !ok || !reflect.DeepEqual(mavenLines, wantMaven) {
+		t.Errorf("MavenLines(delta) = %+v, %v; want %+v", mavenLines, ok, wantMaven)
+	}
 	if err := s.Check(twoToolCatalog(t)); err != nil {
 		t.Errorf("Check: %v", err)
 	}
@@ -229,14 +256,14 @@ func TestGenerateFailsOnAnyFetchError(t *testing.T) {
 		}
 	}
 	u := newUpstream(t, missing)
-	eol, m, a := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
+	eol, m, a, mm := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
 	if !errors.Is(err, source.ErrNotFound) || s != nil {
 		t.Errorf("Generate with a 404 = %v, %v; want ErrNotFound and no snapshot", s, err)
 	}
 
-	eol, m, a = u.clients(source.Options{Offline: true})
-	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, clock)
+	eol, m, a, mm = u.clients(source.Options{Offline: true})
+	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
 	if !errors.Is(err, source.ErrNoData) || s != nil {
 		t.Errorf("Generate offline = %v, %v; want ErrNoData and no snapshot", s, err)
 	}

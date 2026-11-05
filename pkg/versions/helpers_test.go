@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -29,6 +30,7 @@ const (
 	eolPrefix      = "/eol/"
 	rawPrefix      = "/raw/"
 	adoptiumPrefix = "/adoptium/"
+	mavenPrefix    = "/maven/"
 	pythonList     = "/eol/products/python/"
 	goList         = "/eol/products/go/"
 	pythonManifest = "/raw/actions/python-versions/main/versions-manifest.json"
@@ -38,7 +40,8 @@ const (
 // fixedNow is the clock every test starts from.
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
-// upstream serves endoflife.date, versions manifest and Adoptium
+// upstream serves endoflife.date, versions manifest, Adoptium and
+// Maven Central
 // responses built from the embedded snapshot, and counts the requests
 // for each path.
 type upstream struct {
@@ -102,6 +105,20 @@ func newUpstream(t *testing.T) *upstream {
 			t.Fatal(err)
 		}
 		u.bodies[adoptiumPrefix+"v3/info/available_releases"] = data
+	}
+	for artifact, m := range snap.MavenMetadata {
+		var body strings.Builder
+		body.WriteString("<metadata><versioning><versions>")
+		for _, l := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
+			for _, v := range []string{m.Lines[l].NewestPrerelease, m.Lines[l].NewestStable} {
+				if v != "" {
+					body.WriteString("<version>" + v + "</version>")
+				}
+			}
+		}
+		body.WriteString("</versions></versioning></metadata>")
+		group, name, _ := strings.Cut(artifact, ":")
+		u.bodies[mavenPrefix+strings.ReplaceAll(group, ".", "/")+"/"+name+"/maven-metadata.xml"] = []byte(body.String())
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -248,6 +265,7 @@ func newResolver(t *testing.T, u *upstream, edit func(*versions.Options)) *versi
 		EndOfLifeBaseURL: u.srv.URL + eolPrefix,
 		ManifestBaseURL:  u.srv.URL + rawPrefix,
 		AdoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
+		MavenBaseURL:     u.srv.URL + mavenPrefix,
 	}
 	opts.Fetch.Cache = c
 	opts.Fetch.Retries = -1

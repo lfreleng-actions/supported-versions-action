@@ -17,13 +17,15 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
 // facts is what the sources of one tool supplied.
 type facts struct {
 	// facts are the lifecycle facts of every endoflife source.
 	facts []release.Facts
-	// availability merges every actions-manifest and adoptium source;
+	// availability merges every actions-manifest, adoptium and
+	// maven-metadata source;
 	// nil when the tool has none or none could be supplied.
 	availability map[string]policy.Build
 	// sources holds one entry per catalog source, in catalog order.
@@ -39,9 +41,12 @@ type fetched struct {
 	entry        SourceEntry
 	facts        []release.Facts
 	availability map[string]policy.Build
-	warnings     []string
-	snapshot     bool
-	err          error
+	// newest maps each line to the newest release a maven-metadata
+	// source publishes of it.
+	newest   map[string]string
+	warnings []string
+	snapshot bool
+	err      error
 }
 
 // gather fetches the facts of every source of tool concurrently. When
@@ -58,6 +63,7 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 	wg.Wait()
 
 	var out facts
+	newest := make(map[string]string)
 	for _, res := range results {
 		if res.err != nil {
 			return facts{}, res.err
@@ -74,25 +80,49 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 				out.availability[l] = b
 			}
 		}
+		for l, v := range res.newest {
+			newest[l] = v
+		}
 	}
+	raiseLatest(out.facts, newest)
 	return out, nil
+}
+
+// raiseLatest moves each line's Latest up to the release newest names
+// when Maven Central publishes a newer one than the lifecycle facts
+// know of, so the report names the newest patch an installer can
+// fetch. The facts' LatestDate no longer describes Latest then, and is
+// dropped.
+func raiseLatest(facts []release.Facts, newest map[string]string) {
+	for i, f := range facts {
+		v, ok := newest[f.Line]
+		if !ok || !mavenmeta.Newer(v, f.Latest) {
+			continue
+		}
+		facts[i].Latest = v
+		facts[i].LatestDate = nil
+	}
 }
 
 // fetch reads one source.
 func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source, line string) fetched {
 	switch src.Type {
 	case snapshot.TypeEndOfLife:
-		return r.fetchEndOfLife(ctx, src.Product, line)
+		return r.fetchEndOfLife(ctx, scheme, src.Product, line)
 	case snapshot.TypeActionsManifest:
 		return r.fetchManifest(ctx, scheme, src.Repository, line)
 	case snapshot.TypeAdoptium:
 		return r.fetchAdoptium(ctx, line)
+	case snapshot.TypeMavenMetadata:
+		return r.fetchMavenMetadata(ctx, scheme, src.Artifact, line)
 	default:
 		return fetched{err: fmt.Errorf("%w %q", ErrUnsupportedSource, src.Type)}
 	}
 }
 
-func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fetched {
+// fetchEndOfLife reads the lifecycle facts of product, keeping only
+// the lines valid under scheme.
+func (r *Resolver) fetchEndOfLife(ctx context.Context, scheme, product, line string) fetched {
 	out := fetched{entry: SourceEntry{Type: snapshot.TypeEndOfLife, Ref: product}}
 	var (
 		res source.Result
@@ -116,6 +146,7 @@ func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fet
 	}
 	switch {
 	case err == nil:
+		out.facts = release.OnScheme(out.facts, scheme)
 		out.entry.Kind = Kind(res.Source)
 		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
 		out.warnings = res.Warnings
@@ -125,6 +156,7 @@ func (r *Resolver) fetchEndOfLife(ctx context.Context, product, line string) fet
 		return out
 	}
 	all, fetchedAt, found := r.snapshot.Facts(product)
+	all = release.OnScheme(all, scheme)
 	if !found {
 		out.err = fmt.Errorf("%w for endoflife product %q: %w", ErrNoFacts, product, err)
 		return out
@@ -219,6 +251,52 @@ func (r *Resolver) fetchAdoptium(ctx context.Context, line string) fetched {
 			continue
 		}
 		out.availability[l] = policy.Build{Stable: l}
+	}
+	return out
+}
+
+// fetchMavenMetadata reads the versions Maven Central publishes of
+// artifact, with the newest release and pre-release of each line.
+func (r *Resolver) fetchMavenMetadata(ctx context.Context, scheme, artifact, line string) fetched {
+	out := fetched{entry: SourceEntry{Type: snapshot.TypeMavenMetadata, Ref: artifact}}
+	var lines map[string]actionsmanifest.Line
+	versions, res, err := r.maven.Versions(ctx, artifact)
+	switch {
+	case err == nil:
+		lines = make(map[string]actionsmanifest.Line)
+		for l, b := range mavenmeta.Lines(versions, scheme) {
+			lines[l] = actionsmanifest.Line{NewestStable: b.NewestStable, NewestPrerelease: b.NewestPrerelease}
+		}
+		out.entry.Kind = Kind(res.Source)
+		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
+		out.warnings = res.Warnings
+	case !errors.Is(err, source.ErrNoData):
+		out.err = err
+		return out
+	default:
+		var (
+			fetchedAt time.Time
+			found     bool
+		)
+		lines, fetchedAt, found = r.snapshot.MavenLines(artifact)
+		if !found {
+			out.entry.Kind = KindUnavailable
+			return out
+		}
+		out.entry.Kind = KindSnapshot
+		out.entry.FetchedAt = timePtr(stamp(fetchedAt))
+		out.snapshot = true
+	}
+	out.availability = make(map[string]policy.Build, len(lines))
+	out.newest = make(map[string]string, len(lines))
+	for l, b := range lines {
+		if line != "" && release.CompareLines(l, line) != 0 {
+			continue
+		}
+		out.availability[l] = policy.Build{Stable: b.NewestStable, Prerelease: b.NewestPrerelease}
+		if b.NewestStable != "" {
+			out.newest[l] = b.NewestStable
+		}
 	}
 	return out
 }

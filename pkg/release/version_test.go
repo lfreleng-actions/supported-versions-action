@@ -92,6 +92,7 @@ func TestParse(t *testing.T) {
 		{SchemeMajorMinor, "4.0", []spelling{
 			{"4.0.0-rc-7", true},
 			{"4.0.0-alpha", true},
+			{"4.0.0-M1", true},
 		}},
 		// Gradle.
 		{SchemeMajor, "9", []spelling{

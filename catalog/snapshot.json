@@ -1,9 +1,93 @@
 {
   "schema": 1,
-  "generated_at": "2026-11-05T21:09:35Z",
+  "generated_at": "2026-11-05T22:12:57Z",
   "endoflife": {
+    "apache-maven": {
+      "fetched_at": "2026-11-05T22:12:57Z",
+      "releases": [
+        {
+          "line": "3.0",
+          "released": "2010-10-04",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2013-06-28",
+          "latest": "3.0.5",
+          "latest_date": "2013-02-19"
+        },
+        {
+          "line": "3.1",
+          "released": "2013-06-28",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2014-02-14",
+          "latest": "3.1.1",
+          "latest_date": "2013-09-17"
+        },
+        {
+          "line": "3.2",
+          "released": "2014-02-14",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2015-03-13",
+          "latest": "3.2.5",
+          "latest_date": "2014-12-14"
+        },
+        {
+          "line": "3.3",
+          "released": "2015-03-13",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2017-04-03",
+          "latest": "3.3.9",
+          "latest_date": "2015-11-10"
+        },
+        {
+          "line": "3.5",
+          "released": "2017-04-03",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2018-10-24",
+          "latest": "3.5.4",
+          "latest_date": "2018-06-17"
+        },
+        {
+          "line": "3.6",
+          "released": "2018-10-24",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-03-30",
+          "latest": "3.6.3",
+          "latest_date": "2019-11-19"
+        },
+        {
+          "line": "3.8",
+          "released": "2021-03-30",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-06-14",
+          "latest": "3.8.9",
+          "latest_date": "2025-06-14"
+        },
+        {
+          "line": "3.9",
+          "released": "2023-01-31",
+          "lts": false,
+          "is_eol": false,
+          "latest": "3.9.16",
+          "latest_date": "2026-05-17"
+        },
+        {
+          "line": "3.10",
+          "released": "2026-09-27",
+          "lts": false,
+          "is_eol": false,
+          "latest": "3.10.0",
+          "latest_date": "2026-10-01"
+        }
+      ]
+    },
     "eclipse-temurin": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "releases": [
         {
           "line": "8",
@@ -134,7 +218,7 @@
       ]
     },
     "go": {
-      "fetched_at": "2026-11-05T21:09:34Z",
+      "fetched_at": "2026-11-05T22:12:56Z",
       "releases": [
         {
           "line": "1.10",
@@ -299,7 +383,7 @@
       ]
     },
     "nodejs": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "releases": [
         {
           "line": "1",
@@ -590,7 +674,7 @@
       ]
     },
     "python": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "releases": [
         {
           "line": "2.6",
@@ -787,7 +871,7 @@
   },
   "actions_manifest": {
     "actions/go-versions": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "lines": {
         "1.10": {
           "newest_stable": "1.10.8"
@@ -849,7 +933,7 @@
       }
     },
     "actions/node-versions": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "lines": {
         "10": {
           "newest_stable": "10.24.1"
@@ -890,7 +974,7 @@
       }
     },
     "actions/python-versions": {
-      "fetched_at": "2026-11-05T21:09:35Z",
+      "fetched_at": "2026-11-05T22:12:57Z",
       "lines": {
         "3.0": {
           "newest_stable": "3.0.1"
@@ -954,7 +1038,7 @@
     }
   },
   "adoptium": {
-    "fetched_at": "2026-11-05T21:09:35Z",
+    "fetched_at": "2026-11-05T22:12:57Z",
     "lines": [
       "8",
       "11",
@@ -971,5 +1055,56 @@
       "26",
       "27"
     ]
+  },
+  "maven_metadata": {
+    "org.apache.maven:apache-maven": {
+      "fetched_at": "2026-11-05T22:12:57Z",
+      "lines": {
+        "2.0": {
+          "newest_stable": "2.0.11"
+        },
+        "2.1": {
+          "newest_stable": "2.1.0",
+          "newest_prerelease": "2.1.0-M1"
+        },
+        "2.2": {
+          "newest_stable": "2.2.1"
+        },
+        "3.0": {
+          "newest_stable": "3.0.5",
+          "newest_prerelease": "3.0-beta-3"
+        },
+        "3.1": {
+          "newest_stable": "3.1.1",
+          "newest_prerelease": "3.1.0-alpha-1"
+        },
+        "3.10": {
+          "newest_stable": "3.10.0",
+          "newest_prerelease": "3.10.0-rc-1"
+        },
+        "3.2": {
+          "newest_stable": "3.2.5"
+        },
+        "3.3": {
+          "newest_stable": "3.3.9"
+        },
+        "3.5": {
+          "newest_stable": "3.5.4",
+          "newest_prerelease": "3.5.0-beta-1"
+        },
+        "3.6": {
+          "newest_stable": "3.6.3"
+        },
+        "3.8": {
+          "newest_stable": "3.8.9"
+        },
+        "3.9": {
+          "newest_stable": "3.9.16"
+        },
+        "4.0": {
+          "newest_prerelease": "4.0.0-rc-7"
+        }
+      }
+    }
   }
 }

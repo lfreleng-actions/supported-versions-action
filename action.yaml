@@ -12,7 +12,8 @@ description: >-
 
 inputs:
   tool:
-    description: "Catalog tool id or alias, such as python, go, node or java"
+    description: >-
+      Catalog tool id or alias, such as python, go, node, java or maven
     required: true
   mode:
     description: "Command to run: matrix, check or list"

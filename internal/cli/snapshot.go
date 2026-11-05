@@ -14,6 +14,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
 // snapshotCmd regenerates the offline snapshot of the embedded catalog
@@ -49,7 +50,9 @@ func (e *env) snapshotCmd(ctx context.Context, g *globals, args []string) error 
 	manifests.BaseURL = e.hooks.manifestBaseURL
 	releases := adoptium.New(fetcher)
 	releases.BaseURL = e.hooks.adoptiumBaseURL
-	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, e.hooks.now)
+	maven := mavenmeta.New(fetcher)
+	maven.BaseURL = e.hooks.mavenBaseURL
+	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, e.hooks.now)
 	if err != nil {
 		return err
 	}

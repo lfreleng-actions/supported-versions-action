@@ -18,6 +18,7 @@ import (
 const (
 	python = "python"
 	java   = "java"
+	maven  = "maven"
 )
 
 // demoPolicyCount is the path of the count the demo tools omit.
@@ -34,7 +35,7 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", java, "nodejs", python}; !reflect.DeepEqual(got, want) {
+	if got, want := c.IDs(), []string{"go", java, maven, "nodejs", python}; !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -45,6 +46,7 @@ func TestEmbedded(t *testing.T) {
 		"go":      "go",
 		"node":    "nodejs",
 		"jdk":     java,
+		"MVN":     maven,
 		"Temurin": java,
 		"openjdk": java,
 	} {
@@ -75,7 +77,7 @@ func TestEmbedded(t *testing.T) {
 
 func TestLoadValid(t *testing.T) {
 	c := loadValid(t)
-	want := []string{"gradle", "java", "legacy", "maven", "node", python, "rust"}
+	want := []string{"gradle", "java", "legacy", maven, "node", python, "rust"}
 	if got := c.IDs(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IDs() = %v, want %v", got, want)
 	}
@@ -93,7 +95,7 @@ func TestLoadValid(t *testing.T) {
 			t.Errorf("source type %q not covered by the valid fixture", typ)
 		}
 	}
-	if r := c.Tools["maven"].Compatibility["java"]["4.0"]; r.Min != "17" || r.Max != "25" {
+	if r := c.Tools[maven].Compatibility["java"]["4.0"]; r.Min != "17" || r.Max != "25" {
 		t.Errorf("maven/java compatibility for 4.0 = %+v", r)
 	}
 	lines := c.Tools["legacy"].Sources[0].Lines
@@ -446,7 +448,7 @@ func TestApplyDoesNotMutate(t *testing.T) {
 	}
 
 	// The result must not share mutable state with the input.
-	got.Tools["maven"].Compatibility["java"]["3.9"] = catalog.LineRange{Min: "11"}
+	got.Tools[maven].Compatibility["java"]["3.9"] = catalog.LineRange{Min: "11"}
 	got.Tools["legacy"].Sources[0].Lines[0].Line = "9.9"
 	got.Tools[python].Constraints.Detect[0].File = "changed"
 	got.Tools["rust"].Policy.Labels[0] = "changed"
