@@ -10,10 +10,10 @@
 [![Linux Foundation](https://img.shields.io/badge/Linux-Foundation-blue)](https://linuxfoundation.org/) [![Source Code](https://img.shields.io/badge/GitHub-100000?logo=github&logoColor=white&color=blue)](https://github.com/lfreleng-actions/actions-template) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![pre-commit.ci status badge]][pre-commit.ci results page] [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lfreleng-actions/actions-template/badge)](https://scorecard.dev/viewer/?uri=github.com/lfreleng-actions/actions-template)
 <!-- prettier-ignore-end -->
 
-Resolves the supported release lines of a tool, such as Python, Go, Node.js
-or Java, from its upstream release facts and the organisation's catalog policy.
-It produces a build matrix, checks whether a project may still use one
-version, or lists a tool's release lines.
+Resolves the supported release lines of a tool, such as Python, Go, Node.js,
+Java or Maven, from its upstream release facts and the organisation's
+catalog policy. It produces a build matrix, checks whether a project may
+still use one version, or lists a tool's release lines.
 
 The action builds the `supported-versions` command-line tool from its
 own source and runs it with `--format github`; the tool writes every
@@ -23,12 +23,13 @@ output, annotation and job summary.
 
 <!-- markdownlint-disable MD013 -->
 
-| Tool                   | ID       | Aliases                      | Matrix key       | Lines in the matrix         | Constraint detected from                                                    |
-| ---------------------- | -------- | ---------------------------- | ---------------- | --------------------------- | --------------------------------------------------------------------------- |
-| Python                 | `python` | `cpython`, `python3`, `py`   | `python-version` | Supported from 3.11         | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version`                |
-| Go                     | `go`     | `golang`                     | `go-version`     | Supported                   | `go.mod` (`go` and `toolchain` directives)                                  |
-| Node.js                | `nodejs` | `node`                       | `node-version`   | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                  |
-| Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk`  | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`) |
+| Tool                   | ID       | Aliases                     | Matrix key       | Lines in the matrix         | Constraint detected from                                                                 |
+| ---------------------- | -------- | --------------------------- | ---------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| Python                 | `python` | `cpython`, `python3`, `py`  | `python-version` | Supported from 3.11         | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version`                             |
+| Go                     | `go`     | `golang`                    | `go-version`     | Supported                   | `go.mod` (`go` and `toolchain` directives)                                               |
+| Node.js                | `nodejs` | `node`                      | `node-version`   | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                               |
+| Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk` | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`)              |
+| Apache Maven           | `maven`  | `mvn`                       | `maven-version`  | Supported, no pre-releases  | `.mvn/wrapper/maven-wrapper.properties` (`distributionUrl`), `pom.xml` (`prerequisites`) |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -50,6 +51,18 @@ does. `maven.compiler.release` may refer to another property of the
 same `pom.xml`, such as `${java.version}`; the action warns about and
 skips a property the file does not define, such as one from a parent
 POM.
+
+Maven lines are minor releases such as `3.9`, and a line enters the
+matrix once Maven Central publishes a release of it. A line whose
+builds on Maven Central are all alpha, beta or release candidates stays out
+unless `include_prerelease` is `true`. Maven constraints use
+Maven's version range syntax, such as `[3.8,4.0)` or `[3.6.3,)`; a bare
+version such as `3.9.6` keeps that release and newer. The Maven wrapper's
+`distributionUrl` names such a version, and `<prerequisites><maven>` in
+`pom.xml` names a version or a range. endoflife.date also lists Maven 1
+and 2, which are not minor lines; the action leaves them out. Each line
+of the JSON report at `report_path` names its newest release, such as
+`3.9.16`, for an installer that needs a full version.
 
 ## Usage Example
 
@@ -134,7 +147,7 @@ Pin the action and any other action to a commit SHA in real workflows.
 
 | Name                | Required | Default  | Description                                                                                                       |
 | ------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node` or `java`                                                |
+| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node`, `java` or `maven`                                       |
 | mode                | False    | `matrix` | `matrix`, `check` or `list` (the release lines of `tool`); any other value fails                                  |
 | version             | False    |          | Version to check; required in `check` mode and rejected in the others                                             |
 | constraint          | False    |          | Constraint applied to the matrix; wins over `path_prefix`; in `matrix` mode                                       |

@@ -92,3 +92,25 @@ tools:
       current: false
       floor: "17"
       admit: installable
+
+  maven:
+    name: Apache Maven
+    aliases: [mvn]
+    version_scheme: major.minor
+    matrix_key: maven-version
+    sources:
+      - {type: endoflife, product: apache-maven}
+      - {type: maven-metadata, artifact: "org.apache.maven:apache-maven"}
+    constraints:
+      syntax: maven-range
+      detect:
+        - file: .mvn/wrapper/maven-wrapper.properties
+          # The version comes from the file name, so any mirror layout
+          # matches.
+          # yamllint disable-line rule:line-length
+          regex: '(?m)^\s*distributionUrl\s*[=:].*/apache-maven-([0-9][^/\s]*?)-bin\.'
+        - {file: pom.xml, xpath: /project/prerequisites/maven}
+    policy:
+      rule: all
+      prerelease: false
+      admit: installable
