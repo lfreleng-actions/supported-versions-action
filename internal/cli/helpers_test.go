@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -23,16 +24,17 @@ import (
 )
 
 const (
-	eolPrefix = "/eol/"
-	rawPrefix = "/raw/"
-	reportURL = "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json"
+	eolPrefix      = "/eol/"
+	rawPrefix      = "/raw/"
+	adoptiumPrefix = "/adoptium/"
+	reportURL      = "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json"
 )
 
 // fixedNow is the clock every test starts from.
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
-// upstream serves endoflife.date and versions manifest responses built
-// from the embedded snapshot, as pkg/versions' tests do.
+// upstream serves endoflife.date, versions manifest and Adoptium
+// responses built from the embedded snapshot, as pkg/versions' tests do.
 type upstream struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -77,6 +79,21 @@ func newUpstream(t *testing.T) *upstream {
 			t.Fatal(err)
 		}
 		u.bodies[rawPrefix+repo+"/main/versions-manifest.json"] = data
+	}
+	if lines, _, ok := snap.AdoptiumLines(); ok {
+		available := make([]int, 0, len(lines))
+		for _, l := range lines {
+			n, err := strconv.Atoi(l)
+			if err != nil {
+				t.Fatal(err)
+			}
+			available = append(available, n)
+		}
+		data, err := json.Marshal(map[string][]int{"available_releases": available})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u.bodies[adoptiumPrefix+"v3/info/available_releases"] = data
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -196,6 +213,7 @@ func newHarness(t *testing.T) *harness {
 		hooks: hooks{
 			endOfLifeBaseURL: u.srv.URL + eolPrefix,
 			manifestBaseURL:  u.srv.URL + rawPrefix,
+			adoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
 			now:              func() time.Time { return fixedNow },
 			snapshot:         embeddedSnapshot(t),
 		},

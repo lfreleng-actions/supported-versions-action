@@ -12,6 +12,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 )
 
@@ -45,7 +46,7 @@ type Options struct {
 	OverlayOrigin string
 	// Snapshot is the offline fallback; nil uses snapshot.Embedded().
 	Snapshot *snapshot.Snapshot
-	// Fetch configures the fetcher both upstream clients share. Its
+	// Fetch configures the fetcher the upstream clients share. Its
 	// Now is replaced by the Resolver's clock.
 	Fetch source.Options
 	// Now returns the current time; nil uses time.Now.
@@ -56,6 +57,9 @@ type Options struct {
 	// ManifestBaseURL overrides the versions manifest root. It exists
 	// for tests.
 	ManifestBaseURL string
+	// AdoptiumBaseURL overrides the Adoptium API root. It exists for
+	// tests.
+	AdoptiumBaseURL string
 }
 
 // Resolver resolves matrices and checks versions. It is safe for
@@ -69,6 +73,7 @@ type Resolver struct {
 	now           func() time.Time
 	eol           *endoflife.Client
 	manifests     *actionsmanifest.Client
+	adoptium      *adoptium.Client
 }
 
 // New returns a Resolver configured by opts. It applies and so
@@ -104,6 +109,8 @@ func New(opts Options) (*Resolver, error) {
 	eol.BaseURL = opts.EndOfLifeBaseURL
 	manifests := actionsmanifest.New(f)
 	manifests.BaseURL = opts.ManifestBaseURL
+	releases := adoptium.New(f)
+	releases.BaseURL = opts.AdoptiumBaseURL
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
@@ -113,6 +120,7 @@ func New(opts Options) (*Resolver, error) {
 		now:           now,
 		eol:           eol,
 		manifests:     manifests,
+		adoptium:      releases,
 	}, nil
 }
 

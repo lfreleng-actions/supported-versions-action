@@ -188,12 +188,13 @@ func TestList(t *testing.T) {
 	r := h.run("list")
 	r.want(t, ExitOK)
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
-	if len(lines) != 4 || !strings.HasPrefix(lines[0], "ID") ||
-		!strings.HasPrefix(lines[1], "go ") || !strings.HasPrefix(lines[2], "nodejs ") ||
-		!strings.HasPrefix(lines[3], "python ") {
+	if len(lines) != 5 || !strings.HasPrefix(lines[0], "ID") ||
+		!strings.HasPrefix(lines[1], "go ") || !strings.HasPrefix(lines[2], "java ") ||
+		!strings.HasPrefix(lines[3], "nodejs ") || !strings.HasPrefix(lines[4], "python ") {
 		t.Errorf("list =\n%s", r.stdout)
 	}
-	wantContains(t, "list", r.stdout, "cpython,python3,py", "python-version", "endoflife,actions-manifest")
+	wantContains(t, "list", r.stdout, "cpython,python3,py", "python-version", "endoflife,actions-manifest",
+		"Java (Eclipse Temurin)", "endoflife,adoptium")
 
 	r = h.run(flagFormat, formatJSON, "list")
 	r.want(t, ExitOK)
@@ -201,8 +202,9 @@ func TestList(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 3 || rows[0].ID != "go" || rows[1].MatrixKey != "node-version" ||
-		rows[2].MatrixKey != "python-version" || !slices.Equal(rows[2].Sources, []string{"endoflife", "actions-manifest"}) ||
+	if len(rows) != 4 || rows[0].ID != "go" || rows[1].MatrixKey != "java-version" ||
+		!slices.Equal(rows[1].Sources, []string{"endoflife", "adoptium"}) || rows[2].MatrixKey != "node-version" ||
+		rows[3].MatrixKey != "python-version" || !slices.Equal(rows[3].Sources, []string{"endoflife", "actions-manifest"}) ||
 		!slices.Equal(rows[0].Aliases, []string{"golang"}) {
 		t.Errorf("rows = %+v", rows)
 	}

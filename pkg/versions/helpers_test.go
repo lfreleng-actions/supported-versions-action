@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,7 @@ import (
 const (
 	eolPrefix      = "/eol/"
 	rawPrefix      = "/raw/"
+	adoptiumPrefix = "/adoptium/"
 	pythonList     = "/eol/products/python/"
 	goList         = "/eol/products/go/"
 	pythonManifest = "/raw/actions/python-versions/main/versions-manifest.json"
@@ -36,8 +38,9 @@ const (
 // fixedNow is the clock every test starts from.
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
-// upstream serves endoflife.date and versions manifest responses built
-// from the embedded snapshot, and counts the requests for each path.
+// upstream serves endoflife.date, versions manifest and Adoptium
+// responses built from the embedded snapshot, and counts the requests
+// for each path.
 type upstream struct {
 	t      *testing.T
 	srv    *httptest.Server
@@ -84,6 +87,21 @@ func newUpstream(t *testing.T) *upstream {
 			t.Fatal(err)
 		}
 		u.bodies[rawPrefix+repo+"/main/versions-manifest.json"] = data
+	}
+	if lines, _, ok := snap.AdoptiumLines(); ok {
+		available := make([]int, 0, len(lines))
+		for _, l := range lines {
+			n, err := strconv.Atoi(l)
+			if err != nil {
+				t.Fatal(err)
+			}
+			available = append(available, n)
+		}
+		data, err := json.Marshal(map[string][]int{"available_releases": available})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u.bodies[adoptiumPrefix+"v3/info/available_releases"] = data
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -229,6 +247,7 @@ func newResolver(t *testing.T, u *upstream, edit func(*versions.Options)) *versi
 		Now:              func() time.Time { return fixedNow },
 		EndOfLifeBaseURL: u.srv.URL + eolPrefix,
 		ManifestBaseURL:  u.srv.URL + rawPrefix,
+		AdoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
 	}
 	opts.Fetch.Cache = c
 	opts.Fetch.Retries = -1

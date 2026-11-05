@@ -114,6 +114,7 @@ func (e *env) resolve(g *globals, fn func(*versions.Resolver) (versions.Report, 
 		Snapshot:         e.hooks.snapshot,
 		EndOfLifeBaseURL: e.hooks.endOfLifeBaseURL,
 		ManifestBaseURL:  e.hooks.manifestBaseURL,
+		AdoptiumBaseURL:  e.hooks.adoptiumBaseURL,
 	}
 	if g.policy != "" {
 		if opts.Overlay, err = catalog.LoadOverlay(g.policy); err != nil {

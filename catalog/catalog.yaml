@@ -72,3 +72,23 @@ tools:
       rule: lts
       current: false
       admit: installable
+
+  java:
+    name: Java (Eclipse Temurin)
+    aliases: [jdk, temurin, openjdk]
+    version_scheme: major
+    matrix_key: java-version
+    sources:
+      - {type: endoflife, product: eclipse-temurin}
+      - {type: adoptium}
+    constraints:
+      syntax: java-release
+      detect:
+        - {file: pom.xml, xpath: /project/properties/maven.compiler.release}
+        - {file: .java-version}
+        - {file: .sdkmanrc, key: java}
+    policy:
+      rule: lts
+      current: false
+      floor: "17"
+      admit: installable

@@ -14,17 +14,18 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 )
 
-// Generate fetches every endoflife and actions-manifest source of the
-// catalog's tools, in cat.IDs() order, and returns their snapshot.
+// Generate fetches every endoflife, actions-manifest and adoptium
+// source of the catalog's tools, in cat.IDs() order, and returns their snapshot.
 // Manifests are reduced to lines under the version scheme of the first
 // tool naming them. A source two tools share is fetched once. Other
 // source types are skipped. Any fetch error fails the whole generation,
 // so a partial snapshot is never returned. GeneratedAt is now(), or
 // time.Now when now is nil.
-func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, now func() time.Time) (*Snapshot, error) {
+func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, now func() time.Time) (*Snapshot, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -58,6 +59,15 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 					FetchedAt: stamp(res.FetchedAt),
 					Lines:     actionsmanifest.Lines(builds, tool.VersionScheme),
 				}
+			case TypeAdoptium:
+				if s.Adoptium != nil {
+					continue
+				}
+				r, res, err := releases.Releases(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
+				}
+				s.Adoptium = &Adoptium{FetchedAt: stamp(res.FetchedAt), Lines: r.Lines()}
 			}
 		}
 	}
@@ -66,13 +76,14 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 }
 
 // Check reports, together, every way the snapshot and the catalog
-// disagree: an endoflife or actions-manifest source of the catalog
-// with no entry, an entry for a source the catalog no longer names,
+// disagree: an endoflife, actions-manifest or adoptium source of the
+// catalog with no entry, an entry for a source the catalog no longer names,
 // and a line that is not valid under the version scheme of a tool
 // using the source.
 func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	products := make(map[string][]string)
 	repos := make(map[string][]string)
+	var adoptiumSchemes []string
 	for _, id := range cat.IDs() {
 		tool := cat.Tools[id]
 		for _, src := range tool.Sources {
@@ -81,6 +92,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 				products[src.Product] = append(products[src.Product], tool.VersionScheme)
 			case TypeActionsManifest:
 				repos[src.Repository] = append(repos[src.Repository], tool.VersionScheme)
+			case TypeAdoptium:
+				adoptiumSchemes = append(adoptiumSchemes, tool.VersionScheme)
 			}
 		}
 	}
@@ -103,6 +116,16 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 		}
 		for _, line := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
 			errs = appendInvalidLine(errs, "actions-manifest repository "+repo, line, repos[repo])
+		}
+	}
+	switch {
+	case adoptiumSchemes != nil && s.Adoptium == nil:
+		errs = append(errs, errors.New("snapshot: adoptium releases are missing"))
+	case adoptiumSchemes == nil && s.Adoptium != nil:
+		errs = append(errs, errors.New("snapshot: adoptium releases are not in the catalog"))
+	case s.Adoptium != nil:
+		for _, line := range s.Adoptium.Lines {
+			errs = appendInvalidLine(errs, "adoptium", line, adoptiumSchemes)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.EndOfLife)) {

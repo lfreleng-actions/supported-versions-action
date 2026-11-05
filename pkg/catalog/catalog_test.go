@@ -15,7 +15,10 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/catalog"
 )
 
-const python = "python"
+const (
+	python = "python"
+	java   = "java"
+)
 
 // demoPolicyCount is the path of the count the demo tools omit.
 const demoPolicyCount = "tools.demo.policy.count"
@@ -31,7 +34,7 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", "nodejs", python}; !reflect.DeepEqual(got, want) {
+	if got, want := c.IDs(), []string{"go", java, "nodejs", python}; !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -41,6 +44,9 @@ func TestEmbedded(t *testing.T) {
 		"cpython": python,
 		"go":      "go",
 		"node":    "nodejs",
+		"jdk":     java,
+		"Temurin": java,
+		"openjdk": java,
 	} {
 		id, tool, ok := c.Lookup(name)
 		if !ok || id != want || tool.Name == "" {

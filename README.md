@@ -10,8 +10,8 @@
 [![Linux Foundation](https://img.shields.io/badge/Linux-Foundation-blue)](https://linuxfoundation.org/) [![Source Code](https://img.shields.io/badge/GitHub-100000?logo=github&logoColor=white&color=blue)](https://github.com/lfreleng-actions/actions-template) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![pre-commit.ci status badge]][pre-commit.ci results page] [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lfreleng-actions/actions-template/badge)](https://scorecard.dev/viewer/?uri=github.com/lfreleng-actions/actions-template)
 <!-- prettier-ignore-end -->
 
-Resolves the supported release lines of a tool, such as Python, Go or Node.js,
-from its upstream release facts and the organisation's catalog policy.
+Resolves the supported release lines of a tool, such as Python, Go, Node.js
+or Java, from its upstream release facts and the organisation's catalog policy.
 It produces a build matrix, checks whether a project may still use one
 version, or lists a tool's release lines.
 
@@ -23,11 +23,12 @@ output, annotation and job summary.
 
 <!-- markdownlint-disable MD013 -->
 
-| Tool    | ID       | Aliases                    | Matrix key       | Lines in the matrix | Constraint detected from                                     |
-| ------- | -------- | -------------------------- | ---------------- | ------------------- | ------------------------------------------------------------ |
-| Python  | `python` | `cpython`, `python3`, `py` | `python-version` | Supported from 3.11 | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version` |
-| Go      | `go`     | `golang`                   | `go-version`     | Supported           | `go.mod` (`go` and `toolchain` directives)                   |
-| Node.js | `nodejs` | `node`                     | `node-version`   | Supported LTS lines | `package.json` (`engines.node`), `.nvmrc`, `.node-version`   |
+| Tool                   | ID       | Aliases                      | Matrix key       | Lines in the matrix         | Constraint detected from                                                    |
+| ---------------------- | -------- | ---------------------------- | ---------------- | --------------------------- | --------------------------------------------------------------------------- |
+| Python                 | `python` | `cpython`, `python3`, `py`   | `python-version` | Supported from 3.11         | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version`                |
+| Go                     | `go`     | `golang`                     | `go-version`     | Supported                   | `go.mod` (`go` and `toolchain` directives)                                  |
+| Node.js                | `nodejs` | `node`                       | `node-version`   | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                  |
+| Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk`  | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`) |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -38,6 +39,17 @@ constraints use the npm semver range syntax, such as
 nvm aliases `node`, `stable`, `lts/*` or `lts/-N`, which resolve to a
 line from the release facts. A codename alias such as `lts/jod` stays
 unresolved: the action warns and leaves the matrix unconstrained.
+
+Java lines are feature releases such as `21`, and a line enters the
+matrix once Adoptium publishes Temurin builds of it. A project's
+`maven.compiler.release`, `.java-version` or `.sdkmanrc` names one
+release, which the matrix holds as a floor: `21`, `21.0.5+11` or the
+SDKMAN identifier `21.0.5-tem` keep 21 and newer, and the legacy `1.8`
+names 8. A `.java-version` pins its one line, as `.python-version`
+does. `maven.compiler.release` may refer to another property of the
+same `pom.xml`, such as `${java.version}`; the action warns about and
+skips a property the file does not define, such as one from a parent
+POM.
 
 ## Usage Example
 
@@ -90,6 +102,15 @@ The test job then sets up each line of the matrix:
     node-version: ${{ matrix.node-version }}
 ```
 
+For Java, set up Temurin builds of each line:
+
+```yaml
+- uses: actions/setup-java@v5
+  with:
+    distribution: temurin
+    java-version: ${{ matrix.java-version }}
+```
+
 Fail a job that pins a version that is no longer supported:
 
 ```yaml
@@ -113,7 +134,7 @@ Pin the action and any other action to a commit SHA in real workflows.
 
 | Name                | Required | Default  | Description                                                                                                       |
 | ------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| tool                | True     |          | Catalog tool id or alias, for example `python`, `go` or `node`                                                    |
+| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node` or `java`                                                |
 | mode                | False    | `matrix` | `matrix`, `check` or `list` (the release lines of `tool`); any other value fails                                  |
 | version             | False    |          | Version to check; required in `check` mode and rejected in the others                                             |
 | constraint          | False    |          | Constraint applied to the matrix; wins over `path_prefix`; in `matrix` mode                                       |
