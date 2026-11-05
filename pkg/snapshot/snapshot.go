@@ -7,8 +7,8 @@
 //
 // The snapshot stores normalised data rather than raw response bodies:
 // the endoflife.date facts of each product, the newest stable and
-// pre-release build of each line of each versions manifest, and the
-// release lines Adoptium has builds of. It is small, and regenerating it produces diffs a reviewer can read.
+// pre-release build of each line of each versions manifest and each
+// Maven Central artifact, and the release lines Adoptium has builds of. It is small, and regenerating it produces diffs a reviewer can read.
 package snapshot
 
 import (
@@ -42,12 +42,16 @@ const (
 	TypeActionsManifest = "actions-manifest"
 	// TypeAdoptium is the catalog source type of the Adoptium API.
 	TypeAdoptium = "adoptium"
+	// TypeMavenMetadata is the catalog source type of an artifact's
+	// maven-metadata.xml on Maven Central.
+	TypeMavenMetadata = "maven-metadata"
 )
 
 const day = 24 * time.Hour
 
 // Snapshot is the offline copy of the release facts of every
-// endoflife, actions-manifest and adoptium source in the catalog.
+// endoflife, actions-manifest, adoptium and maven-metadata source in
+// the catalog.
 type Snapshot struct {
 	// Schema is the format version, always Schema.
 	Schema int
@@ -62,6 +66,9 @@ type Snapshot struct {
 	// Adoptium is the snapshot of the Adoptium API, or nil when the
 	// catalog has no adoptium source.
 	Adoptium *Adoptium
+	// MavenMetadata maps a group:artifact coordinate to the lines of
+	// its Maven Central metadata.
+	MavenMetadata map[string]Manifest
 }
 
 // Adoptium is the snapshot of the release lines Adoptium has builds of.
@@ -82,7 +89,8 @@ type Product struct {
 	Releases []release.Facts
 }
 
-// Manifest is the snapshot of one versions manifest.
+// Manifest is the snapshot of one versions manifest or one artifact's
+// Maven Central metadata.
 type Manifest struct {
 	// FetchedAt is when the manifest was fetched, in UTC, to the
 	// second.
@@ -112,6 +120,17 @@ func (s *Snapshot) Facts(product string) (facts []release.Facts, fetchedAt time.
 // for repository.
 func (s *Snapshot) Lines(repository string) (lines map[string]actionsmanifest.Line, fetchedAt time.Time, found bool) {
 	m, ok := s.ActionsManifest[repository]
+	if !ok {
+		return nil, time.Time{}, false
+	}
+	return maps.Clone(m.Lines), m.FetchedAt, true
+}
+
+// MavenLines returns the lines of the Maven Central metadata of
+// artifact and when it was fetched. found is false when the snapshot
+// has no entry for artifact.
+func (s *Snapshot) MavenLines(artifact string) (lines map[string]actionsmanifest.Line, fetchedAt time.Time, found bool) {
+	m, ok := s.MavenMetadata[artifact]
 	if !ok {
 		return nil, time.Time{}, false
 	}
@@ -152,6 +171,7 @@ type wireSnapshot struct {
 	EndOfLife       map[string]wireProduct  `json:"endoflife"`
 	ActionsManifest map[string]wireManifest `json:"actions_manifest"`
 	Adoptium        *wireAdoptium           `json:"adoptium,omitempty"`
+	MavenMetadata   map[string]wireManifest `json:"maven_metadata,omitempty"`
 }
 
 type wireAdoptium struct {
@@ -216,11 +236,13 @@ func (s *Snapshot) Marshal() ([]byte, error) {
 		w.EndOfLife[name] = wp
 	}
 	for repo, m := range s.ActionsManifest {
-		wm := wireManifest{FetchedAt: formatTime(m.FetchedAt), Lines: make(map[string]wireLine, len(m.Lines))}
-		for line, l := range m.Lines {
-			wm.Lines[line] = wireLine{NewestStable: l.NewestStable, NewestPrerelease: l.NewestPrerelease}
+		w.ActionsManifest[repo] = m.toWire()
+	}
+	if len(s.MavenMetadata) > 0 {
+		w.MavenMetadata = make(map[string]wireManifest, len(s.MavenMetadata))
+		for artifact, m := range s.MavenMetadata {
+			w.MavenMetadata[artifact] = m.toWire()
 		}
-		w.ActionsManifest[repo] = wm
 	}
 	if s.Adoptium != nil {
 		w.Adoptium = &wireAdoptium{FetchedAt: formatTime(s.Adoptium.FetchedAt), Lines: sortedLines(s.Adoptium.Lines)}
@@ -278,14 +300,17 @@ func Parse(data []byte) (*Snapshot, error) {
 		s.EndOfLife[name] = p
 	}
 	for repo, wm := range w.ActionsManifest {
-		m := Manifest{Lines: make(map[string]actionsmanifest.Line, len(wm.Lines))}
-		if m.FetchedAt, err = parseTime("actions_manifest."+repo+".fetched_at", wm.FetchedAt); err != nil {
+		if s.ActionsManifest[repo], err = wm.fromWire("actions_manifest." + repo); err != nil {
 			return nil, err
 		}
-		for line, wl := range wm.Lines {
-			m.Lines[line] = actionsmanifest.Line{NewestStable: wl.NewestStable, NewestPrerelease: wl.NewestPrerelease}
+	}
+	if len(w.MavenMetadata) > 0 {
+		s.MavenMetadata = make(map[string]Manifest, len(w.MavenMetadata))
+		for artifact, wm := range w.MavenMetadata {
+			if s.MavenMetadata[artifact], err = wm.fromWire("maven_metadata." + artifact); err != nil {
+				return nil, err
+			}
 		}
-		s.ActionsManifest[repo] = m
 	}
 	if w.Adoptium != nil {
 		a := &Adoptium{Lines: sortedLines(w.Adoptium.Lines)}
@@ -323,6 +348,11 @@ func (s *Snapshot) validate() error {
 			return fmt.Errorf("snapshot: actions_manifest.%s: empty line", repo)
 		}
 	}
+	for _, artifact := range slices.Sorted(maps.Keys(s.MavenMetadata)) {
+		if _, ok := s.MavenMetadata[artifact].Lines[""]; ok {
+			return fmt.Errorf("snapshot: maven_metadata.%s: empty line", artifact)
+		}
+	}
 	if s.Adoptium != nil {
 		lines := sortedLines(s.Adoptium.Lines)
 		for i, l := range lines {
@@ -335,6 +365,27 @@ func (s *Snapshot) validate() error {
 		}
 	}
 	return nil
+}
+
+func (m Manifest) toWire() wireManifest {
+	wm := wireManifest{FetchedAt: formatTime(m.FetchedAt), Lines: make(map[string]wireLine, len(m.Lines))}
+	for line, l := range m.Lines {
+		wm.Lines[line] = wireLine{NewestStable: l.NewestStable, NewestPrerelease: l.NewestPrerelease}
+	}
+	return wm
+}
+
+// fromWire decodes the manifest at the JSON path where.
+func (wm wireManifest) fromWire(where string) (Manifest, error) {
+	m := Manifest{Lines: make(map[string]actionsmanifest.Line, len(wm.Lines))}
+	var err error
+	if m.FetchedAt, err = parseTime(where+".fetched_at", wm.FetchedAt); err != nil {
+		return Manifest{}, err
+	}
+	for line, wl := range wm.Lines {
+		m.Lines[line] = actionsmanifest.Line{NewestStable: wl.NewestStable, NewestPrerelease: wl.NewestPrerelease}
+	}
+	return m, nil
 }
 
 // sortedLines returns a copy of lines in ascending line order.

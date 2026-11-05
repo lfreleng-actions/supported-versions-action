@@ -35,6 +35,11 @@ func sample() *snapshot.Snapshot {
 			}},
 		},
 		Adoptium: &snapshot.Adoptium{FetchedAt: at, Lines: []string{"9", "17", "21"}},
+		MavenMetadata: map[string]snapshot.Manifest{
+			deltaID: {FetchedAt: at, Lines: map[string]actionsmanifest.Line{
+				line20: {NewestStable: "2.0.1", NewestPrerelease: "2.0.0-rc-1"},
+			}},
+		},
 	}
 }
 
@@ -91,6 +96,10 @@ func TestParseRejects(t *testing.T) {
 			"adoptium": {"fetched_at": "2026-10-28T21:30:00Z", "lines": ["8", "17", "8"]}}`,
 		"adoptium empty line": head + `"endoflife": {}, "actions_manifest": {},
 			"adoptium": {"fetched_at": "2026-10-28T21:30:00Z", "lines": ["8", ""]}}`,
+		"maven fetched_at": head + `"endoflife": {}, "actions_manifest": {},
+			"maven_metadata": {"org.example:x": {"fetched_at": "x", "lines": {}}}}`,
+		"maven empty line": head + `"endoflife": {}, "actions_manifest": {},
+			"maven_metadata": {"org.example:x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"": {}}}}}`,
 		"trailing data": `{"schema": 1, "generated_at": "2026-10-28T21:30:00Z", "endoflife": {}, "actions_manifest": {}} {}`,
 	}
 	for name, data := range cases {
@@ -108,6 +117,8 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 	s.EndOfLife["gone"] = snapshot.Product{}
 	s.ActionsManifest[sharedRepo].Lines["2.x"] = actionsmanifest.Line{NewestStable: "2.9.0"}
 	s.Adoptium.Lines = append(s.Adoptium.Lines, line21)
+	s.MavenMetadata["org.example:gone"] = snapshot.Manifest{}
+	s.MavenMetadata[deltaID].Lines["2"] = actionsmanifest.Line{NewestStable: "2"}
 	err := s.Check(twoToolCatalog(t))
 	if err == nil {
 		t.Fatal("Check passed")
@@ -117,6 +128,8 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 		`endoflife product "gone" is not in the catalog`,
 		`line "2.x" is not valid under version scheme "major.minor"`,
 		`adoptium: line "2.1" is not valid under version scheme "major"`,
+		`maven-metadata artifact "org.example:gone" is not in the catalog`,
+		`maven-metadata artifact org.example:delta: line "2" is not valid`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Check error lacks %q:\n%v", want, err)
@@ -135,6 +148,22 @@ func TestCheckAdoptiumEntry(t *testing.T) {
 	delete(cat.Tools, "gamma")
 	if err := s.Check(cat); err == nil || !strings.Contains(err.Error(), "adoptium releases are not in the catalog") {
 		t.Errorf("Check with no adoptium tool = %v", err)
+	}
+}
+
+func TestCheckMavenMetadataEntry(t *testing.T) {
+	s := sample()
+	s.MavenMetadata = nil
+	if err := s.Check(twoToolCatalog(t)); err == nil ||
+		!strings.Contains(err.Error(), `maven-metadata artifact "org.example:delta" is missing`) {
+		t.Errorf("Check without Maven metadata = %v", err)
+	}
+	data, err := s.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "maven_metadata") {
+		t.Errorf("output names maven_metadata:\n%s", data)
 	}
 }
 
@@ -176,6 +205,9 @@ func TestLookupsMissing(t *testing.T) {
 	}
 	if _, _, ok := s.Lines("owner/nope"); ok {
 		t.Error("Lines found an absent repository")
+	}
+	if _, _, ok := s.MavenLines("org.example:nope"); ok {
+		t.Error("MavenLines found an absent artifact")
 	}
 	s.Adoptium = nil
 	if _, _, ok := s.AdoptiumLines(); ok {

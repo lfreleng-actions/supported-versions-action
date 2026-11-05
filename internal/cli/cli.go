@@ -78,6 +78,8 @@ type hooks struct {
 	manifestBaseURL string
 	// adoptiumBaseURL overrides the Adoptium API root.
 	adoptiumBaseURL string
+	// mavenBaseURL overrides the Maven Central repository root.
+	mavenBaseURL string
 	// now overrides the clock.
 	now func() time.Time
 	// snapshot overrides the embedded snapshot.

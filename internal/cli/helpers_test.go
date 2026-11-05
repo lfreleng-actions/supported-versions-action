@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -27,13 +28,15 @@ const (
 	eolPrefix      = "/eol/"
 	rawPrefix      = "/raw/"
 	adoptiumPrefix = "/adoptium/"
+	mavenPrefix    = "/maven/"
 	reportURL      = "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json"
 )
 
 // fixedNow is the clock every test starts from.
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
-// upstream serves endoflife.date, versions manifest and Adoptium
+// upstream serves endoflife.date, versions manifest, Adoptium and
+// Maven Central
 // responses built from the embedded snapshot, as pkg/versions' tests do.
 type upstream struct {
 	t      *testing.T
@@ -94,6 +97,20 @@ func newUpstream(t *testing.T) *upstream {
 			t.Fatal(err)
 		}
 		u.bodies[adoptiumPrefix+"v3/info/available_releases"] = data
+	}
+	for artifact, m := range snap.MavenMetadata {
+		var body strings.Builder
+		body.WriteString("<metadata><versioning><versions>")
+		for _, l := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
+			for _, v := range []string{m.Lines[l].NewestPrerelease, m.Lines[l].NewestStable} {
+				if v != "" {
+					body.WriteString("<version>" + v + "</version>")
+				}
+			}
+		}
+		body.WriteString("</versions></versioning></metadata>")
+		group, name, _ := strings.Cut(artifact, ":")
+		u.bodies[mavenPrefix+strings.ReplaceAll(group, ".", "/")+"/"+name+"/maven-metadata.xml"] = []byte(body.String())
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -214,6 +231,7 @@ func newHarness(t *testing.T) *harness {
 			endOfLifeBaseURL: u.srv.URL + eolPrefix,
 			manifestBaseURL:  u.srv.URL + rawPrefix,
 			adoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
+			mavenBaseURL:     u.srv.URL + mavenPrefix,
 			now:              func() time.Time { return fixedNow },
 			snapshot:         embeddedSnapshot(t),
 		},

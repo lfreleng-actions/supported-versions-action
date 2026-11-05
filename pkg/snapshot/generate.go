@@ -16,17 +16,18 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
-// Generate fetches every endoflife, actions-manifest and adoptium
-// source of the catalog's tools, in cat.IDs() order, and returns their snapshot.
-// Manifests are reduced to lines under the version scheme of the first
-// tool naming them, and endoflife products keep only the lines valid
+// Generate fetches every endoflife, actions-manifest, adoptium and
+// maven-metadata source of the catalog's tools, in cat.IDs() order, and
+// returns their snapshot. Manifests and Maven metadata are reduced to
+// lines under the version scheme of the first tool naming them, and endoflife products keep only the lines valid
 // under it. A source two tools share is fetched once. Other
 // source types are skipped. Any fetch error fails the whole generation,
 // so a partial snapshot is never returned. GeneratedAt is now(), or
 // time.Now when now is nil.
-func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, now func() time.Time) (*Snapshot, error) {
+func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, now func() time.Time) (*Snapshot, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -72,6 +73,21 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
 				}
 				s.Adoptium = &Adoptium{FetchedAt: stamp(res.FetchedAt), Lines: r.Lines()}
+			case TypeMavenMetadata:
+				if _, done := s.MavenMetadata[src.Artifact]; done {
+					continue
+				}
+				versions, res, err := maven.Versions(ctx, src.Artifact)
+				if err != nil {
+					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
+				}
+				if s.MavenMetadata == nil {
+					s.MavenMetadata = make(map[string]Manifest)
+				}
+				s.MavenMetadata[src.Artifact] = Manifest{
+					FetchedAt: stamp(res.FetchedAt),
+					Lines:     mavenLines(versions, tool.VersionScheme),
+				}
 			}
 		}
 	}
@@ -79,14 +95,26 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 	return s, nil
 }
 
+// mavenLines maps Maven versions to their lines under scheme, in the
+// form the snapshot stores versions manifest lines in.
+func mavenLines(versions []string, scheme string) map[string]actionsmanifest.Line {
+	lines := make(map[string]actionsmanifest.Line)
+	for l, b := range mavenmeta.Lines(versions, scheme) {
+		lines[l] = actionsmanifest.Line{NewestStable: b.NewestStable, NewestPrerelease: b.NewestPrerelease}
+	}
+	return lines
+}
+
 // Check reports, together, every way the snapshot and the catalog
-// disagree: an endoflife, actions-manifest or adoptium source of the
+// disagree: an endoflife, actions-manifest, adoptium or maven-metadata
+// source of the
 // catalog with no entry, an entry for a source the catalog no longer names,
 // and a line that is not valid under the version scheme of a tool
 // using the source.
 func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	products := make(map[string][]string)
 	repos := make(map[string][]string)
+	artifacts := make(map[string][]string)
 	var adoptiumSchemes []string
 	for _, id := range cat.IDs() {
 		tool := cat.Tools[id]
@@ -98,6 +126,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 				repos[src.Repository] = append(repos[src.Repository], tool.VersionScheme)
 			case TypeAdoptium:
 				adoptiumSchemes = append(adoptiumSchemes, tool.VersionScheme)
+			case TypeMavenMetadata:
+				artifacts[src.Artifact] = append(artifacts[src.Artifact], tool.VersionScheme)
 			}
 		}
 	}
@@ -112,16 +142,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 			errs = appendInvalidLine(errs, "endoflife product "+name, f.Line, products[name])
 		}
 	}
-	for _, repo := range slices.Sorted(maps.Keys(repos)) {
-		m, ok := s.ActionsManifest[repo]
-		if !ok {
-			errs = append(errs, fmt.Errorf("snapshot: actions-manifest repository %q is missing", repo))
-			continue
-		}
-		for _, line := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
-			errs = appendInvalidLine(errs, "actions-manifest repository "+repo, line, repos[repo])
-		}
-	}
+	errs = checkManifests(errs, "actions-manifest repository", repos, s.ActionsManifest)
+	errs = checkManifests(errs, "maven-metadata artifact", artifacts, s.MavenMetadata)
 	switch {
 	case adoptiumSchemes != nil && s.Adoptium == nil:
 		errs = append(errs, errors.New("snapshot: adoptium releases are missing"))
@@ -137,12 +159,30 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 			errs = append(errs, fmt.Errorf("snapshot: endoflife product %q is not in the catalog", name))
 		}
 	}
-	for _, repo := range slices.Sorted(maps.Keys(s.ActionsManifest)) {
-		if _, ok := repos[repo]; !ok {
-			errs = append(errs, fmt.Errorf("snapshot: actions-manifest repository %q is not in the catalog", repo))
+	return errors.Join(errs...)
+}
+
+// checkManifests appends an error for each name of want that have
+// lacks, each line of an entry that is not valid under the schemes
+// want gives it, and each entry of have that want does not name. kind
+// describes a name, such as "actions-manifest repository".
+func checkManifests(errs []error, kind string, want map[string][]string, have map[string]Manifest) []error {
+	for _, name := range slices.Sorted(maps.Keys(want)) {
+		m, ok := have[name]
+		if !ok {
+			errs = append(errs, fmt.Errorf("snapshot: %s %q is missing", kind, name))
+			continue
+		}
+		for _, line := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
+			errs = appendInvalidLine(errs, kind+" "+name, line, want[name])
 		}
 	}
-	return errors.Join(errs...)
+	for _, name := range slices.Sorted(maps.Keys(have)) {
+		if _, ok := want[name]; !ok {
+			errs = append(errs, fmt.Errorf("snapshot: %s %q is not in the catalog", kind, name))
+		}
+	}
+	return errs
 }
 
 // appendInvalidLine appends an error when line is not valid under
