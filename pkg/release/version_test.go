@@ -72,7 +72,18 @@ func TestParse(t *testing.T) {
 		}},
 		{SchemeMajor, "21", []spelling{
 			{"temurin-21.0.5+11", false},
+			{"temurin-21", false},
+			{"21.0.5+11", false},
+			{"21.0.5", false},
+			{"jdk-21.0.5+11", false},
+			{"jdk-21", false},
+			{"JDK-21", false},
 			{"21", false},
+		}},
+		{SchemeMajor, "8", []spelling{
+			{"1.8.0_412", false},
+			{"jdk1.8.0_412", false},
+			{"1.8.0_412+8", false},
 		}},
 		// Maven.
 		{SchemeMajorMinor, lineThreeNine, []spelling{
@@ -114,8 +125,10 @@ func TestParseErrors(t *testing.T) {
 		notAVersion      bool
 	}{
 		{"missing minor", SchemeMajorMinor, "3", false},
-		{"legacy java", SchemeMajor, "1.8.0_412", false},
 		{"legacy java, minor scheme", SchemeMajorMinor, "1.8.0_412", false},
+		{"legacy java, no update", SchemeMajor, "1.8.0_", false},
+		{"legacy java, build suffix", SchemeMajor, "1.8.0_412-b08", false},
+		{"underscore in build metadata", SchemeMajorMinor, "3.15.2+local_1", false},
 		{"unknown hyphen suffix", SchemeMajorMinor, "3.15.0-preview1", false},
 		{"unknown hyphen suffix, major", SchemeMajor, "21.0.5-ea", false},
 		{"short timestamp", SchemeMajor, "9.9.0-2026102801", false},

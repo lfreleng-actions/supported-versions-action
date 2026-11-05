@@ -27,14 +27,19 @@ type Version struct {
 }
 
 // prefixes are stripped, case-insensitively, from the start of a
-// version; at most one is removed.
-var prefixes = []string{"temurin-", "node", "go", "v"}
+// version; at most one is removed, so each comes before any prefix of
+// it.
+var prefixes = []string{"temurin-", "jdk-", "jdk", "node", "go", "v"}
 
 var (
 	numericPart = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)*)(.*)$`)
 	// compactPython is the "py" form: the first digit is the major
 	// and the rest is the minor.
 	compactPython = regexp.MustCompile(`^(?i:py)([0-9])([0-9]+)$`)
+	// legacyJava is the version form of Java 8 and earlier, "1.",
+	// the feature release, a maintenance number and an update after
+	// "_": 1.8.0_412 is Java 8.
+	legacyJava = regexp.MustCompile(`^1\.([1-9][0-9]*)\.[0-9]+_[0-9]+$`)
 	// prereleaseSuffixes are the suffixes, after the numeric
 	// components, that mark a pre-release build.
 	prereleaseSuffixes = []*regexp.Regexp{
@@ -53,16 +58,19 @@ var (
 // Parse reads the version s and returns the release line it belongs to
 // under scheme.
 //
-// Surrounding whitespace and one leading prefix ("v", "go", "node" or
-// "temurin-", in any case) are dropped, as is build metadata after a
-// "+". The compact Python form "py" plus digits reads its first digit
-// as the major and the rest as the minor. The leading dot-separated
-// numbers are then cut to the scheme's line. A known pre-release
-// suffix sets Prerelease; any other suffix is an error.
+// Surrounding whitespace and one leading prefix ("v", "go", "node",
+// "jdk", "jdk-" or "temurin-", in any case) are dropped, as is build
+// metadata after a "+". The compact Python form "py" plus digits reads
+// its first digit as the major and the rest as the minor. Under
+// SchemeMajor, the legacy Java form 1.N.M_U reads N as the line. The
+// leading dot-separated numbers are then cut to the scheme's line. A
+// known pre-release suffix sets Prerelease; any other suffix is an
+// error.
 //
 // Input that does not start with a number once any prefix is dropped
-// returns an error wrapping ErrNotAVersion. Input containing "_" is
-// rejected, so tool-specific legacy forms never turn into a wrong line.
+// returns an error wrapping ErrNotAVersion. Any other input containing
+// "_" is rejected, so tool-specific legacy forms never turn into a
+// wrong line.
 func Parse(scheme, s string) (Version, error) {
 	v := Version{Raw: s}
 	if _, ok := linePatterns[scheme]; !ok {
@@ -72,23 +80,21 @@ func Parse(scheme, s string) (Version, error) {
 	if t == "" {
 		return v, errors.New("empty version")
 	}
+	u, _, _ := strings.Cut(t, "+")
+	u = trimPrefix(u)
+	if m := legacyJava.FindStringSubmatch(u); m != nil && scheme == SchemeMajor {
+		v.Line = m[1]
+		return v, nil
+	}
 	if strings.Contains(t, "_") {
 		return v, fmt.Errorf("version %q: unsupported form containing %q", s, "_")
 	}
-
-	t, _, _ = strings.Cut(t, "+")
+	t = u
 
 	var parts []string
 	if m := compactPython.FindStringSubmatch(t); m != nil {
 		parts = []string{m[1], m[2]}
 	} else {
-		lower := strings.ToLower(t)
-		for _, p := range prefixes {
-			if strings.HasPrefix(lower, p) {
-				t = t[len(p):]
-				break
-			}
-		}
 		m := numericPart.FindStringSubmatch(t)
 		if m == nil {
 			return v, fmt.Errorf("version %q: %w", s, ErrNotAVersion)
@@ -115,6 +121,18 @@ func Parse(scheme, s string) (Version, error) {
 	}
 	v.Line = line
 	return v, nil
+}
+
+// trimPrefix drops the first of prefixes that t starts with, in any
+// case.
+func trimPrefix(t string) string {
+	lower := strings.ToLower(t)
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return t[len(p):]
+		}
+	}
+	return t
 }
 
 func isPrereleaseSuffix(suffix string) bool {
