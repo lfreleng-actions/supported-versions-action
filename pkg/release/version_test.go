@@ -58,7 +58,10 @@ func TestParse(t *testing.T) {
 		{SchemeMajor, "22", []spelling{
 			{"v22.11.0", false},
 			{"V22.11.0", false},
+			{"22.11.0", false},
 			{"node22.11.0", false},
+			{"node22", false},
+			{"22", false},
 		}},
 		// Temurin.
 		{SchemeMajor, "25", []spelling{

@@ -5,9 +5,11 @@
 // and decides which release lines it allows.
 //
 // A constraint is evaluated per release line, because the matrix it
-// narrows is a list of lines: each clause's version is cut to the
-// scheme's line before it is compared. Apply narrows a matrix by a
-// constraint and reports the outcome.
+// narrows is a list of lines. Under pep440 and go-directive each
+// clause's version is cut to the scheme's line before it is compared;
+// under semver-range a line is allowed when some version of it
+// satisfies the range. Apply narrows a matrix by a constraint and
+// reports the outcome.
 //
 // The package depends on the standard library and pkg/release alone.
 package constraint
@@ -62,6 +64,7 @@ const (
 	kindNotMajor               // line's major differs from v's major
 	kindCompatible             // line at least v, with the same major
 	kindNone                   // no line
+	kindInterval               // some version of the line is in iv
 )
 
 // clause is one normalized test on a line.
@@ -71,6 +74,8 @@ type clause struct {
 	op string
 	// v is a release line, or for the major kinds a bare major.
 	v string
+	// iv is the version interval of a kindInterval clause.
+	iv interval
 	// text is the canonical form of the clause.
 	text string
 }
@@ -101,6 +106,8 @@ func (c clause) allows(line string) bool {
 		return major(line) == major(c.v) && release.CompareLines(line, c.v) >= 0
 	case kindNone:
 		return false
+	case kindInterval:
+		return c.iv.allows(line)
 	default:
 		return true
 	}
@@ -156,7 +163,8 @@ func (c Constraint) String() string {
 // Parse parses constraint text written in syntax for a tool whose
 // release lines follow scheme. Text that does not parse returns an
 // error wrapping ErrSyntax, as does pep440 text that is empty or holds
-// nothing but commas and whitespace.
+// nothing but commas and whitespace, and semver-range text that is
+// empty or blank.
 func Parse(syntax, scheme, text string) (Constraint, error) {
 	if !knownScheme(scheme) {
 		return Constraint{}, fmt.Errorf("unknown version scheme %q", scheme)
@@ -166,6 +174,8 @@ func Parse(syntax, scheme, text string) (Constraint, error) {
 		return parsePEP440(scheme, text)
 	case SyntaxGoDirective:
 		return parseGoDirective(scheme, text)
+	case SyntaxSemverRange:
+		return parseSemverRange(scheme, text)
 	default:
 		return Constraint{}, fmt.Errorf("unsupported constraint syntax %q", syntax)
 	}
