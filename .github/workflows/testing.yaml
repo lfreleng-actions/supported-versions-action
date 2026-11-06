@@ -322,6 +322,68 @@ jobs:
           [ "$origin" = "$want" ] ||
             fail "constraint origin '$origin' is not $want"
 
+      - name: "Write the gradle fixture"
+        shell: bash
+        run: |
+          # Write the gradle fixture
+          set -euo pipefail
+          dir="$RUNNER_TEMP/gradle-fixture/gradle/wrapper"
+          mkdir -p "$dir"
+          base="https\\://services.gradle.org/distributions"
+          printf 'distributionUrl=%s/%s\n' \
+            "$base" "gradle-8.14.3-bin.zip" \
+            > "$dir/gradle-wrapper.properties"
+          cat "$dir/gradle-wrapper.properties"
+
+      - name: "Matrix: gradle, detected constraint"
+        id: gradle
+        uses: $/
+        with:
+          tool: gradle
+          path_prefix: ${{ runner.temp }}/gradle-fixture
+
+      - name: "Check: gradle matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.gradle.outputs.matrix_json }}
+          LATEST: ${{ steps.gradle.outputs.latest }}
+          REPORT: ${{ steps.gradle.outputs.report_path }}
+        run: |
+          # Check: gradle matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          [ "$(jqr -c 'keys' <<< "$MATRIX_JSON")" = '["gradle-version"]' ] ||
+            fail "matrix_json keys are not exactly gradle-version"
+          jq -e '.["gradle-version"] | length > 0 and
+            all(test("^[0-9]+$"))' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json is empty or holds a line that is not a bare major"
+          # The wrapper names 8.14.3, which keeps 8 and newer.
+          jq -e '.["gradle-version"] | all(tonumber >= 8)' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json holds a line below 8"
+          last=$(jqr '.["gradle-version"][-1]' <<< "$MATRIX_JSON")
+          [ "$LATEST" = "$last" ] || fail "latest '$LATEST' is not '$last'"
+          report_file="${REPORT//\\//}"
+          [ "$(jqr '.tool' "$report_file")" = gradle ] ||
+            fail "the report's tool is not gradle"
+          origin=$(jqr '.constraint.origin' "$report_file")
+          want="gradle/wrapper/gradle-wrapper.properties"
+          [ "$origin" = "$want" ] ||
+            fail "constraint origin '$origin' is not $want"
+          jq -e '[.lines[] | select(.in_matrix)] |
+            any(.compatibility.java.max // "" | test("^[0-9]+$")) and
+            any(.checksum_url // "" |
+              startswith("https://services.gradle.org/"))' \
+            "$report_file" > /dev/null ||
+            fail "no matrix line names its Java compatibility and checksum"
+
       - name: "Matrix: python, matrix_key"
         id: key
         uses: $/
