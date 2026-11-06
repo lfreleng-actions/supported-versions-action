@@ -90,8 +90,8 @@ type SourceEntry struct {
 	// Type is the catalog source type, for example "endoflife".
 	Type string `json:"type"`
 	// Ref names the upstream: an endoflife product, a repository, a
-	// Maven group:artifact coordinate or, for adoptium and
-	// gradle-services, the API host.
+	// Maven group:artifact coordinate or, for adoptium,
+	// gradle-services and rust-channel, the API host.
 	Ref string `json:"ref"`
 	// Kind is where the facts came from.
 	Kind Kind `json:"kind"`

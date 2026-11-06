@@ -16,6 +16,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 var (
@@ -68,6 +69,9 @@ type Options struct {
 	// GradleBaseURL overrides the Gradle services root. It exists for
 	// tests.
 	GradleBaseURL string
+	// RustBaseURL overrides the Rust distribution root. It exists for
+	// tests.
+	RustBaseURL string
 }
 
 // Resolver resolves matrices and checks versions. It is safe for
@@ -84,6 +88,7 @@ type Resolver struct {
 	adoptium      *adoptium.Client
 	maven         *mavenmeta.Client
 	gradle        *gradleservices.Client
+	rust          *rustchannel.Client
 }
 
 // New returns a Resolver configured by opts. It applies and so
@@ -125,6 +130,8 @@ func New(opts Options) (*Resolver, error) {
 	maven.BaseURL = opts.MavenBaseURL
 	gradle := gradleservices.New(f)
 	gradle.BaseURL = opts.GradleBaseURL
+	rust := rustchannel.New(f)
+	rust.BaseURL = opts.RustBaseURL
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
@@ -137,6 +144,7 @@ func New(opts Options) (*Resolver, error) {
 		adoptium:      releases,
 		maven:         maven,
 		gradle:        gradle,
+		rust:          rust,
 	}, nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 // snapshotCmd regenerates the offline snapshot of the embedded catalog
@@ -55,7 +56,9 @@ func (e *env) snapshotCmd(ctx context.Context, g *globals, args []string) error 
 	maven.BaseURL = e.hooks.mavenBaseURL
 	gradle := gradleservices.New(fetcher)
 	gradle.BaseURL = e.hooks.gradleBaseURL
-	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, gradle, e.hooks.now)
+	rust := rustchannel.New(fetcher)
+	rust.BaseURL = e.hooks.rustBaseURL
+	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, gradle, rust, e.hooks.now)
 	if err != nil {
 		return err
 	}

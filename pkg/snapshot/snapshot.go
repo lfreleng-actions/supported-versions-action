@@ -10,7 +10,8 @@
 // pre-release build of each line of each versions manifest and each
 // Maven Central artifact, the release lines Adoptium has builds of, and
 // the newest Gradle release of each line with its checksum URL and the
-// line's withdrawn releases. It is small, and regenerating it produces
+// line's withdrawn releases, and the release the Rust stable channel
+// serves. It is small, and regenerating it produces
 // diffs a reviewer can read.
 package snapshot
 
@@ -52,13 +53,16 @@ const (
 	// TypeGradleServices is the catalog source type of
 	// services.gradle.org.
 	TypeGradleServices = "gradle-services"
+	// TypeRustChannel is the catalog source type of the Rust stable
+	// channel manifest.
+	TypeRustChannel = "rust-channel"
 )
 
 const day = 24 * time.Hour
 
 // Snapshot is the offline copy of the release facts of every
-// endoflife, actions-manifest, adoptium, maven-metadata and
-// gradle-services source in the catalog.
+// endoflife, actions-manifest, adoptium, maven-metadata,
+// gradle-services and rust-channel source in the catalog.
 type Snapshot struct {
 	// Schema is the format version, always Schema.
 	Schema int
@@ -79,6 +83,21 @@ type Snapshot struct {
 	// GradleServices is the snapshot of services.gradle.org, or nil
 	// when the catalog has no gradle-services source.
 	GradleServices *GradleServices
+	// RustChannel is the snapshot of the Rust stable channel, or nil
+	// when the catalog has no rust-channel source.
+	RustChannel *RustChannel
+}
+
+// RustChannel is the snapshot of the release the Rust stable channel
+// serves.
+type RustChannel struct {
+	// FetchedAt is when the channel manifest was fetched, in UTC, to
+	// the second.
+	FetchedAt time.Time
+	// Version is the stable release, such as "1.99.1".
+	Version string
+	// Date is the day the channel manifest was published.
+	Date time.Time
 }
 
 // GradleServices is the snapshot of the final Gradle releases
@@ -168,6 +187,16 @@ func (s *Snapshot) GradleLines() (lines map[string]gradleservices.Line, fetchedA
 	return maps.Clone(s.GradleServices.Lines), s.GradleServices.FetchedAt, true
 }
 
+// RustStable returns the release the Rust stable channel serves, the
+// day its manifest was published, and when it was fetched. found is
+// false when the snapshot has no rust-channel entry.
+func (s *Snapshot) RustStable() (version string, date, fetchedAt time.Time, found bool) {
+	if s.RustChannel == nil {
+		return "", time.Time{}, time.Time{}, false
+	}
+	return s.RustChannel.Version, s.RustChannel.Date, s.RustChannel.FetchedAt, true
+}
+
 // AdoptiumLines returns the release lines Adoptium has builds of and
 // when they were fetched. found is false when the snapshot has no
 // Adoptium entry.
@@ -204,6 +233,13 @@ type wireSnapshot struct {
 	Adoptium        *wireAdoptium           `json:"adoptium,omitempty"`
 	MavenMetadata   map[string]wireManifest `json:"maven_metadata,omitempty"`
 	GradleServices  *wireGradleServices     `json:"gradle_services,omitempty"`
+	RustChannel     *wireRustChannel        `json:"rust_channel,omitempty"`
+}
+
+type wireRustChannel struct {
+	FetchedAt string `json:"fetched_at"`
+	Version   string `json:"version"`
+	Date      string `json:"date"`
 }
 
 type wireGradleServices struct {
@@ -293,6 +329,9 @@ func (s *Snapshot) Marshal() ([]byte, error) {
 			w.GradleServices.Lines[line] = wireGradleLine{NewestStable: l.NewestStable, ChecksumURL: l.ChecksumURL, Broken: l.Broken}
 		}
 	}
+	if rc := s.RustChannel; rc != nil {
+		w.RustChannel = &wireRustChannel{FetchedAt: formatTime(rc.FetchedAt), Version: rc.Version, Date: rc.Date.UTC().Format(time.DateOnly)}
+	}
 	if s.Adoptium != nil {
 		w.Adoptium = &wireAdoptium{FetchedAt: formatTime(s.Adoptium.FetchedAt), Lines: sortedLines(s.Adoptium.Lines)}
 	}
@@ -378,6 +417,16 @@ func Parse(data []byte) (*Snapshot, error) {
 		}
 		s.GradleServices = g
 	}
+	if wr := w.RustChannel; wr != nil {
+		rc := &RustChannel{Version: wr.Version}
+		if rc.FetchedAt, err = parseTime("rust_channel.fetched_at", wr.FetchedAt); err != nil {
+			return nil, err
+		}
+		if rc.Date, err = time.Parse(time.DateOnly, wr.Date); err != nil {
+			return nil, fmt.Errorf("snapshot: rust_channel.date: %q is not a YYYY-MM-DD date", wr.Date)
+		}
+		s.RustChannel = rc
+	}
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
@@ -425,6 +474,9 @@ func (s *Snapshot) validate() error {
 				return fmt.Errorf("snapshot: gradle_services: line %q has an empty broken release", line)
 			}
 		}
+	}
+	if s.RustChannel != nil && s.RustChannel.Version == "" {
+		return errors.New("snapshot: rust_channel: empty version")
 	}
 	if s.Adoptium != nil {
 		lines := sortedLines(s.Adoptium.Lines)

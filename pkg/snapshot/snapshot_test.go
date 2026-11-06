@@ -46,6 +46,7 @@ func sample() *snapshot.Snapshot {
 			"2": {NewestStable: "2.9"},
 			"4": {Broken: []string{"4.0"}},
 		}},
+		RustChannel: &snapshot.RustChannel{FetchedAt: at, Version: "1.99.1", Date: *day("2026-10-15")},
 	}
 }
 
@@ -116,6 +117,14 @@ func TestParseRejects(t *testing.T) {
 			"gradle_services": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"3": {"newest_stable": "3.0", "broken": [""]}}}}`,
 		"gradle field": head + `"endoflife": {}, "actions_manifest": {},
 			"gradle_services": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"3": {"newest_stable": "3.0", "checksum": "x"}}}}`,
+		"rust fetched_at": head + `"endoflife": {}, "actions_manifest": {},
+			"rust_channel": {"fetched_at": "x", "version": "1.99.1", "date": "2026-10-15"}}`,
+		"rust date": head + `"endoflife": {}, "actions_manifest": {},
+			"rust_channel": {"fetched_at": "2026-10-28T21:30:00Z", "version": "1.99.1", "date": "x"}}`,
+		"rust empty version": head + `"endoflife": {}, "actions_manifest": {},
+			"rust_channel": {"fetched_at": "2026-10-28T21:30:00Z", "version": "", "date": "2026-10-15"}}`,
+		"rust field": head + `"endoflife": {}, "actions_manifest": {},
+			"rust_channel": {"fetched_at": "2026-10-28T21:30:00Z", "version": "1.99.1", "date": "2026-10-15", "x": 1}}`,
 		"trailing data": `{"schema": 1, "generated_at": "2026-10-28T21:30:00Z", "endoflife": {}, "actions_manifest": {}} {}`,
 	}
 	for name, data := range cases {
@@ -136,6 +145,7 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 	s.MavenMetadata["org.example:gone"] = snapshot.Manifest{}
 	s.MavenMetadata[deltaID].Lines["2"] = actionsmanifest.Line{NewestStable: "2"}
 	s.GradleServices.Lines["3.1"] = gradleservices.Line{NewestStable: "3.1.0"}
+	s.RustChannel.Version = "1.100.0-beta.3"
 	err := s.Check(twoToolCatalog(t))
 	if err == nil {
 		t.Fatal("Check passed")
@@ -148,6 +158,7 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 		`maven-metadata artifact "org.example:gone" is not in the catalog`,
 		`maven-metadata artifact org.example:delta: line "2" is not valid`,
 		`gradle-services: line "3.1" is not valid under version scheme "major"`,
+		`rust-channel: release "1.100.0-beta.3" is not a stable release under version scheme "major.minor"`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Check error lacks %q:\n%v", want, err)
@@ -209,6 +220,30 @@ func TestCheckGradleServicesEntry(t *testing.T) {
 	}
 }
 
+func TestCheckRustChannelEntry(t *testing.T) {
+	s := sample()
+	s.RustChannel = nil
+	if err := s.Check(twoToolCatalog(t)); err == nil || !strings.Contains(err.Error(), "rust-channel release is missing") {
+		t.Errorf("Check without the Rust channel = %v", err)
+	}
+	data, err := s.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "rust_channel") {
+		t.Errorf("output names rust_channel:\n%s", data)
+	}
+	if got, err := snapshot.Parse(data); err != nil || got.RustChannel != nil {
+		t.Errorf("Parse = %+v, %v; want no Rust channel", got, err)
+	}
+	s = sample()
+	cat := twoToolCatalog(t)
+	delete(cat.Tools, "zeta")
+	if err := s.Check(cat); err == nil || !strings.Contains(err.Error(), "rust-channel release is not in the catalog") {
+		t.Errorf("Check with no rust-channel tool = %v", err)
+	}
+}
+
 func TestNoAdoptiumOmitted(t *testing.T) {
 	s := sample()
 	s.Adoptium = nil
@@ -258,6 +293,10 @@ func TestLookupsMissing(t *testing.T) {
 	s.GradleServices = nil
 	if _, _, ok := s.GradleLines(); ok {
 		t.Error("GradleLines found an absent entry")
+	}
+	s.RustChannel = nil
+	if _, _, _, ok := s.RustStable(); ok {
+		t.Error("RustStable found an absent entry")
 	}
 }
 
