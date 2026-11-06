@@ -22,6 +22,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
@@ -37,11 +38,12 @@ const (
 	adoptiumPath = "/v3/info/available_releases"
 	deltaPath    = "/org/example/delta/maven-metadata.xml"
 	deltaID      = "org.example:delta"
+	gradlePath   = "/versions/all"
 )
 
 // twoTools is a catalog of two tools with their own endoflife products
-// and one shared versions manifest, a third reading Adoptium and a
-// fourth reading Maven Central metadata.
+// and one shared versions manifest, a third reading Adoptium, a fourth
+// reading Maven Central metadata and a fifth reading Gradle services.
 const twoTools = `schema: 1
 tools:
   alpha:
@@ -75,6 +77,13 @@ tools:
     sources:
       - {type: maven-metadata, artifact: "org.example:delta"}
     policy: {rule: all, admit: installable}
+  epsilon:
+    name: Epsilon
+    version_scheme: major
+    matrix_key: epsilon-version
+    sources:
+      - {type: gradle-services}
+    policy: {rule: all, admit: installable}
 `
 
 var routes = map[string]string{
@@ -94,6 +103,13 @@ var routes = map[string]string{
 <version>1.0</version><version>1.1.0-M1</version><version>1.1.0</version><version>1.1.2</version>
 <version>2.0.0-alpha-1</version><version>2.0.0-rc-1</version><version>2.0.0-SNAPSHOT</version>
 </versions></versioning></metadata>`,
+	gradlePath: `[
+{"version":"3.1.0-rc-1","rcFor":"3.1.0","checksumUrl":"https://example.test/3.1.0-rc-1.sha256"},
+{"version":"3.0.1","checksumUrl":"https://example.test/3.0.1.sha256"},
+{"version":"3.0.2","broken":true,"checksumUrl":"https://example.test/3.0.2.sha256"},
+{"version":"3.0","checksumUrl":"https://example.test/3.0.sha256"},
+{"version":"2.9","checksumUrl":"https://example.test/2.9.sha256"},
+{"version":"3.1.0-20261105051641+0000","snapshot":true,"nightly":true}]`,
 }
 
 // fixedNow is the clock every generation test uses.
@@ -126,7 +142,7 @@ func newUpstream(t *testing.T, routes map[string]string) *upstream {
 	return u
 }
 
-func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client) {
+func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client, *gradleservices.Client) {
 	opts.Sleep = func(context.Context, time.Duration) error { return nil }
 	opts.Retries = -1
 	opts.Now = func() time.Time { return fixedNow }
@@ -139,7 +155,9 @@ func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmani
 	a.BaseURL = u.srv.URL + "/"
 	mm := mavenmeta.New(f)
 	mm.BaseURL = u.srv.URL + "/"
-	return eol, m, a, mm
+	g := gradleservices.New(f)
+	g.BaseURL = u.srv.URL + "/"
+	return eol, m, a, mm, g
 }
 
 func twoToolCatalog(t *testing.T) *catalog.Catalog {
@@ -156,8 +174,8 @@ func clock() time.Time { return fixedNow }
 func generate(t *testing.T, routes map[string]string) (*snapshot.Snapshot, *upstream) {
 	t.Helper()
 	u := newUpstream(t, routes)
-	eol, m, a, mm := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
+	eol, m, a, mm, g := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -227,6 +245,14 @@ func TestGenerate(t *testing.T) {
 	if !ok || !reflect.DeepEqual(mavenLines, wantMaven) {
 		t.Errorf("MavenLines(delta) = %+v, %v; want %+v", mavenLines, ok, wantMaven)
 	}
+	gradleLines, _, ok := s.GradleLines()
+	wantGradle := map[string]gradleservices.Line{
+		"3": {NewestStable: "3.0.1", ChecksumURL: "https://example.test/3.0.1.sha256", Broken: []string{"3.0.2"}},
+		"2": {NewestStable: "2.9", ChecksumURL: "https://example.test/2.9.sha256"},
+	}
+	if !ok || !reflect.DeepEqual(gradleLines, wantGradle) {
+		t.Errorf("GradleLines() = %+v, %v; want %+v", gradleLines, ok, wantGradle)
+	}
 	if err := s.Check(twoToolCatalog(t)); err != nil {
 		t.Errorf("Check: %v", err)
 	}
@@ -256,14 +282,14 @@ func TestGenerateFailsOnAnyFetchError(t *testing.T) {
 		}
 	}
 	u := newUpstream(t, missing)
-	eol, m, a, mm := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
+	eol, m, a, mm, g := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
 	if !errors.Is(err, source.ErrNotFound) || s != nil {
 		t.Errorf("Generate with a 404 = %v, %v; want ErrNotFound and no snapshot", s, err)
 	}
 
-	eol, m, a, mm = u.clients(source.Options{Offline: true})
-	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, clock)
+	eol, m, a, mm, g = u.clients(source.Options{Offline: true})
+	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
 	if !errors.Is(err, source.ErrNoData) || s != nil {
 		t.Errorf("Generate offline = %v, %v; want ErrNoData and no snapshot", s, err)
 	}

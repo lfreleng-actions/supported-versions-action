@@ -239,6 +239,10 @@ func (r *Resolver) report(id string, t catalog.Tool, f facts, res policy.Result,
 	}
 	for _, l := range res.Lines {
 		fa := byLine[l.Line]
+		var sum string
+		if c, ok := f.checksums[l.Line]; ok && c.version == l.Newest {
+			sum = c.url
+		}
 		rep.Lines = append(rep.Lines, Line{
 			Line:        l.Line,
 			Status:      l.Status,
@@ -247,6 +251,7 @@ func (r *Resolver) report(id string, t catalog.Tool, f facts, res policy.Result,
 			LTS:         l.LTS,
 			Installable: l.Installable,
 			Newest:      l.Newest,
+			ChecksumURL: sum,
 			Released:    formatDate(fa.Released),
 			EOAS:        formatDate(fa.EOASFrom),
 			EOL:         formatDate(l.EOL),

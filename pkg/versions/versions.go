@@ -14,6 +14,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
@@ -64,6 +65,9 @@ type Options struct {
 	// MavenBaseURL overrides the Maven Central repository root. It
 	// exists for tests.
 	MavenBaseURL string
+	// GradleBaseURL overrides the Gradle services root. It exists for
+	// tests.
+	GradleBaseURL string
 }
 
 // Resolver resolves matrices and checks versions. It is safe for
@@ -79,6 +83,7 @@ type Resolver struct {
 	manifests     *actionsmanifest.Client
 	adoptium      *adoptium.Client
 	maven         *mavenmeta.Client
+	gradle        *gradleservices.Client
 }
 
 // New returns a Resolver configured by opts. It applies and so
@@ -118,6 +123,8 @@ func New(opts Options) (*Resolver, error) {
 	releases.BaseURL = opts.AdoptiumBaseURL
 	maven := mavenmeta.New(f)
 	maven.BaseURL = opts.MavenBaseURL
+	gradle := gradleservices.New(f)
+	gradle.BaseURL = opts.GradleBaseURL
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
@@ -129,6 +136,7 @@ func New(opts Options) (*Resolver, error) {
 		manifests:     manifests,
 		adoptium:      releases,
 		maven:         maven,
+		gradle:        gradle,
 	}, nil
 }
 

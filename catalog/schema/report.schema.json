@@ -142,6 +142,7 @@
         "lts": {"type": "boolean"},
         "installable": {"type": "boolean"},
         "newest": {"type": "string", "minLength": 1},
+        "checksum_url": {"type": "string", "format": "uri", "pattern": "^https?://"},
         "released": {"$ref": "#/$defs/date"},
         "eoas": {"$ref": "#/$defs/date"},
         "eol": {"$ref": "#/$defs/date"},

@@ -22,6 +22,7 @@ import (
 	catalogdata "github.com/lfreleng-actions/supported-versions-action/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 )
 
 const (
@@ -29,14 +30,15 @@ const (
 	rawPrefix      = "/raw/"
 	adoptiumPrefix = "/adoptium/"
 	mavenPrefix    = "/maven/"
+	gradlePrefix   = "/gradle/"
 	reportURL      = "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json"
 )
 
 // fixedNow is the clock every test starts from.
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
-// upstream serves endoflife.date, versions manifest, Adoptium and
-// Maven Central
+// upstream serves endoflife.date, versions manifest, Adoptium, Maven
+// Central and Gradle services
 // responses built from the embedded snapshot, as pkg/versions' tests do.
 type upstream struct {
 	t      *testing.T
@@ -111,6 +113,9 @@ func newUpstream(t *testing.T) *upstream {
 		body.WriteString("</versions></versioning></metadata>")
 		group, name, _ := strings.Cut(artifact, ":")
 		u.bodies[mavenPrefix+strings.ReplaceAll(group, ".", "/")+"/"+name+"/maven-metadata.xml"] = []byte(body.String())
+	}
+	if lines, _, ok := snap.GradleLines(); ok {
+		u.bodies[gradlePrefix+"versions/all"] = gradleBody(t, lines)
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -202,6 +207,25 @@ func envelope(t *testing.T, result any) []byte {
 	return data
 }
 
+// gradleBody is a services.gradle.org versions listing naming the
+// newest release of each line, newest line first.
+func gradleBody(t *testing.T, lines map[string]gradleservices.Line) []byte {
+	t.Helper()
+	type version struct {
+		Version     string `json:"version"`
+		ChecksumURL string `json:"checksumUrl,omitempty"`
+	}
+	var versions []version
+	for _, l := range slices.Backward(slices.SortedFunc(maps.Keys(lines), release.CompareLines)) {
+		versions = append(versions, version{Version: lines[l].NewestStable, ChecksumURL: lines[l].ChecksumURL})
+	}
+	data, err := json.Marshal(versions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func embeddedSnapshot(t *testing.T) *snapshot.Snapshot {
 	t.Helper()
 	s, err := snapshot.Embedded()
@@ -232,6 +256,7 @@ func newHarness(t *testing.T) *harness {
 			manifestBaseURL:  u.srv.URL + rawPrefix,
 			adoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
 			mavenBaseURL:     u.srv.URL + mavenPrefix,
+			gradleBaseURL:    u.srv.URL + gradlePrefix,
 			now:              func() time.Time { return fixedNow },
 			snapshot:         embeddedSnapshot(t),
 		},

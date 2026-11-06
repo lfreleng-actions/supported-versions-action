@@ -16,18 +16,20 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
-// Generate fetches every endoflife, actions-manifest, adoptium and
-// maven-metadata source of the catalog's tools, in cat.IDs() order, and
-// returns their snapshot. Manifests and Maven metadata are reduced to
-// lines under the version scheme of the first tool naming them, and endoflife products keep only the lines valid
-// under it. A source two tools share is fetched once. Other
+// Generate fetches every endoflife, actions-manifest, adoptium,
+// maven-metadata and gradle-services source of the catalog's tools, in
+// cat.IDs() order, and returns their snapshot. Manifests, Maven
+// metadata and Gradle versions are reduced to lines under the version
+// scheme of the first tool naming them, and endoflife products keep
+// only the lines valid under it. A source two tools share is fetched once. Other
 // source types are skipped. Any fetch error fails the whole generation,
 // so a partial snapshot is never returned. GeneratedAt is now(), or
 // time.Now when now is nil.
-func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, now func() time.Time) (*Snapshot, error) {
+func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, gradle *gradleservices.Client, now func() time.Time) (*Snapshot, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -73,6 +75,18 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
 				}
 				s.Adoptium = &Adoptium{FetchedAt: stamp(res.FetchedAt), Lines: r.Lines()}
+			case TypeGradleServices:
+				if s.GradleServices != nil {
+					continue
+				}
+				versions, res, err := gradle.Versions(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
+				}
+				s.GradleServices = &GradleServices{
+					FetchedAt: stamp(res.FetchedAt),
+					Lines:     gradleservices.Lines(versions, tool.VersionScheme),
+				}
 			case TypeMavenMetadata:
 				if _, done := s.MavenMetadata[src.Artifact]; done {
 					continue
@@ -106,16 +120,15 @@ func mavenLines(versions []string, scheme string) map[string]actionsmanifest.Lin
 }
 
 // Check reports, together, every way the snapshot and the catalog
-// disagree: an endoflife, actions-manifest, adoptium or maven-metadata
-// source of the
-// catalog with no entry, an entry for a source the catalog no longer names,
+// disagree: an endoflife, actions-manifest, adoptium, maven-metadata or
+// gradle-services source of the catalog with no entry, an entry for a source the catalog no longer names,
 // and a line that is not valid under the version scheme of a tool
 // using the source.
 func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	products := make(map[string][]string)
 	repos := make(map[string][]string)
 	artifacts := make(map[string][]string)
-	var adoptiumSchemes []string
+	var adoptiumSchemes, gradleSchemes []string
 	for _, id := range cat.IDs() {
 		tool := cat.Tools[id]
 		for _, src := range tool.Sources {
@@ -126,6 +139,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 				repos[src.Repository] = append(repos[src.Repository], tool.VersionScheme)
 			case TypeAdoptium:
 				adoptiumSchemes = append(adoptiumSchemes, tool.VersionScheme)
+			case TypeGradleServices:
+				gradleSchemes = append(gradleSchemes, tool.VersionScheme)
 			case TypeMavenMetadata:
 				artifacts[src.Artifact] = append(artifacts[src.Artifact], tool.VersionScheme)
 			}
@@ -152,6 +167,16 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	case s.Adoptium != nil:
 		for _, line := range s.Adoptium.Lines {
 			errs = appendInvalidLine(errs, "adoptium", line, adoptiumSchemes)
+		}
+	}
+	switch {
+	case gradleSchemes != nil && s.GradleServices == nil:
+		errs = append(errs, errors.New("snapshot: gradle-services versions are missing"))
+	case gradleSchemes == nil && s.GradleServices != nil:
+		errs = append(errs, errors.New("snapshot: gradle-services versions are not in the catalog"))
+	case s.GradleServices != nil:
+		for _, line := range slices.SortedFunc(maps.Keys(s.GradleServices.Lines), release.CompareLines) {
+			errs = appendInvalidLine(errs, "gradle-services", line, gradleSchemes)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(s.EndOfLife)) {

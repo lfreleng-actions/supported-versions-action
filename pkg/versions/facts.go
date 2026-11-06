@@ -17,6 +17,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
@@ -24,10 +25,13 @@ import (
 type facts struct {
 	// facts are the lifecycle facts of every endoflife source.
 	facts []release.Facts
-	// availability merges every actions-manifest, adoptium and
-	// maven-metadata source;
+	// availability merges every actions-manifest, adoptium,
+	// maven-metadata and gradle-services source;
 	// nil when the tool has none or none could be supplied.
 	availability map[string]policy.Build
+	// checksums maps a line to the checksum a gradle-services source
+	// gives its newest release.
+	checksums map[string]checksum
 	// sources holds one entry per catalog source, in catalog order.
 	sources []SourceEntry
 	// warnings are the sources' warnings, in catalog order.
@@ -36,17 +40,29 @@ type facts struct {
 	snapshot bool
 }
 
+// checksum is where the checksum of one release is published.
+type checksum struct {
+	version string
+	url     string
+}
+
 // fetched is what one source supplied.
 type fetched struct {
 	entry        SourceEntry
 	facts        []release.Facts
 	availability map[string]policy.Build
-	// newest maps each line to the newest release a maven-metadata
-	// source publishes of it.
-	newest   map[string]string
-	warnings []string
-	snapshot bool
-	err      error
+	// newest maps each line to the newest release a maven-metadata or
+	// gradle-services source publishes of it, and newer orders those
+	// releases in the source's version order.
+	newest    map[string]string
+	newer     func(v, than string) bool
+	checksums map[string]checksum
+	// withdrawn maps each line to what a gradle-services source lists
+	// of it, for the line's withdrawn releases.
+	withdrawn map[string]gradleservices.Line
+	warnings  []string
+	snapshot  bool
+	err       error
 }
 
 // gather fetches the facts of every source of tool concurrently. When
@@ -63,7 +79,6 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 	wg.Wait()
 
 	var out facts
-	newest := make(map[string]string)
 	for _, res := range results {
 		if res.err != nil {
 			return facts{}, res.err
@@ -80,27 +95,54 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 				out.availability[l] = b
 			}
 		}
-		for l, v := range res.newest {
-			newest[l] = v
+		for l, c := range res.checksums {
+			if out.checksums == nil {
+				out.checksums = make(map[string]checksum)
+			}
+			out.checksums[l] = c
 		}
 	}
-	raiseLatest(out.facts, newest)
+	for _, res := range results {
+		withdraw(out.facts, res.withdrawn)
+		raiseLatest(out.facts, res.newest, res.newer)
+	}
 	return out, nil
 }
 
+// withdraw replaces each line's Latest when a source marks that
+// release withdrawn: with the newest release the source lists of the
+// line, or with nothing when it lists none, so the report names the
+// installable release or none. A Latest the source does not list is
+// left alone; a listing that lags is no withdrawal.
+func withdraw(facts []release.Facts, lines map[string]gradleservices.Line) {
+	for i, f := range facts {
+		l, ok := lines[f.Line]
+		if !ok || !l.Withdrawn(f.Latest) {
+			continue
+		}
+		facts[i].Latest = l.NewestStable
+		facts[i].LatestDate = nil
+	}
+}
+
 // raiseLatest moves each line's Latest up to the release newest names
-// when Maven Central publishes a newer one than the lifecycle facts
-// know of, so the report names the newest patch an installer can
-// fetch. The facts' LatestDate no longer describes Latest then, and is
-// dropped.
-func raiseLatest(facts []release.Facts, newest map[string]string) {
+// when a source publishes a newer one, in the order newer gives, than
+// the lifecycle facts know of, so the report names the newest patch an
+// installer can fetch. The facts' LatestDate no longer describes
+// Latest then, and is dropped. When the two name the same release in
+// different spellings, such as with and without a trailing zero,
+// Latest takes the source's, the name its installer fetches, and
+// keeps its date.
+func raiseLatest(facts []release.Facts, newest map[string]string, newer func(v, than string) bool) {
 	for i, f := range facts {
 		v, ok := newest[f.Line]
-		if !ok || !mavenmeta.Newer(v, f.Latest) {
+		if !ok || v == f.Latest || newer(f.Latest, v) {
 			continue
 		}
 		facts[i].Latest = v
-		facts[i].LatestDate = nil
+		if newer(v, f.Latest) {
+			facts[i].LatestDate = nil
+		}
 	}
 }
 
@@ -115,6 +157,8 @@ func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source,
 		return r.fetchAdoptium(ctx, line)
 	case snapshot.TypeMavenMetadata:
 		return r.fetchMavenMetadata(ctx, scheme, src.Artifact, line)
+	case snapshot.TypeGradleServices:
+		return r.fetchGradleServices(ctx, scheme, line)
 	default:
 		return fetched{err: fmt.Errorf("%w %q", ErrUnsupportedSource, src.Type)}
 	}
@@ -289,6 +333,7 @@ func (r *Resolver) fetchMavenMetadata(ctx context.Context, scheme, artifact, lin
 	}
 	out.availability = make(map[string]policy.Build, len(lines))
 	out.newest = make(map[string]string, len(lines))
+	out.newer = mavenmeta.Newer
 	for l, b := range lines {
 		if line != "" && release.CompareLines(l, line) != 0 {
 			continue
@@ -296,6 +341,60 @@ func (r *Resolver) fetchMavenMetadata(ctx context.Context, scheme, artifact, lin
 		out.availability[l] = policy.Build{Stable: b.NewestStable, Prerelease: b.NewestPrerelease}
 		if b.NewestStable != "" {
 			out.newest[l] = b.NewestStable
+		}
+	}
+	return out
+}
+
+// fetchGradleServices reads the final Gradle releases
+// services.gradle.org lists, with the newest of each line, the URL of
+// its checksum and the line's withdrawn releases.
+func (r *Resolver) fetchGradleServices(ctx context.Context, scheme, line string) fetched {
+	out := fetched{entry: SourceEntry{Type: snapshot.TypeGradleServices, Ref: gradleservices.Host}}
+	var lines map[string]gradleservices.Line
+	versions, res, err := r.gradle.Versions(ctx)
+	switch {
+	case err == nil:
+		lines = gradleservices.Lines(versions, scheme)
+		out.entry.Kind = Kind(res.Source)
+		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
+		out.warnings = res.Warnings
+	case !errors.Is(err, source.ErrNoData):
+		out.err = err
+		return out
+	default:
+		var (
+			fetchedAt time.Time
+			found     bool
+		)
+		lines, fetchedAt, found = r.snapshot.GradleLines()
+		if !found {
+			out.entry.Kind = KindUnavailable
+			return out
+		}
+		out.entry.Kind = KindSnapshot
+		out.entry.FetchedAt = timePtr(stamp(fetchedAt))
+		out.snapshot = true
+	}
+	out.availability = make(map[string]policy.Build, len(lines))
+	out.newest = make(map[string]string, len(lines))
+	out.newer = gradleservices.Newer
+	out.checksums = make(map[string]checksum, len(lines))
+	out.withdrawn = make(map[string]gradleservices.Line)
+	for l, b := range lines {
+		if line != "" && release.CompareLines(l, line) != 0 {
+			continue
+		}
+		if len(b.Broken) > 0 {
+			out.withdrawn[l] = b
+		}
+		if b.NewestStable == "" {
+			continue
+		}
+		out.availability[l] = policy.Build{Stable: b.NewestStable}
+		out.newest[l] = b.NewestStable
+		if b.ChecksumURL != "" {
+			out.checksums[l] = checksum{version: b.NewestStable, url: b.ChecksumURL}
 		}
 	}
 	return out

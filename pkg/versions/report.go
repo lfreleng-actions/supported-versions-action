@@ -90,7 +90,8 @@ type SourceEntry struct {
 	// Type is the catalog source type, for example "endoflife".
 	Type string `json:"type"`
 	// Ref names the upstream: an endoflife product, a repository, a
-	// Maven group:artifact coordinate or, for adoptium, the API host.
+	// Maven group:artifact coordinate or, for adoptium and
+	// gradle-services, the API host.
 	Ref string `json:"ref"`
 	// Kind is where the facts came from.
 	Kind Kind `json:"kind"`
@@ -164,6 +165,9 @@ type Line struct {
 	Installable bool `json:"installable"`
 	// Newest is the newest patch release, if known.
 	Newest string `json:"newest,omitempty"`
+	// ChecksumURL is the URL of the SHA-256 checksum of Newest's
+	// distribution, where a source publishes one.
+	ChecksumURL string `json:"checksum_url,omitempty"`
 	// Released is the release date, if known.
 	Released string `json:"released,omitempty"`
 	// EOAS is the day active support ends, if known.
