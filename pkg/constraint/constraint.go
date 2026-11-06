@@ -208,6 +208,21 @@ func NewLineSet(scheme string, lines []string) (Constraint, error) {
 	return Constraint{scheme: scheme, set: set, text: "{" + strings.Join(set, ", ") + "}"}, nil
 }
 
+// NewMinimum returns a constraint that allows the line of version and
+// every newer line, for a project that pins one release, such as a
+// Gradle wrapper, rather than declaring a range.
+func NewMinimum(scheme, version string) (Constraint, error) {
+	if !knownScheme(scheme) {
+		return Constraint{}, fmt.Errorf("unknown version scheme %q", scheme)
+	}
+	v, err := release.Parse(scheme, version)
+	if err != nil {
+		return Constraint{}, fmt.Errorf("%w: %w", ErrSyntax, err)
+	}
+	cl := clause{kind: kindCompare, op: ">=", v: v.Line, text: ">=" + v.Line}
+	return Constraint{scheme: scheme, alts: [][]clause{{cl}}, text: cl.text}, nil
+}
+
 // Apply narrows matrix to the lines c allows, keeping their order. A
 // nil c leaves the matrix unchanged with OutcomeNone. When c allows no
 // line of the matrix, the matrix is returned unchanged with

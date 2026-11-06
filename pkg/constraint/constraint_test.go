@@ -359,6 +359,33 @@ func TestNewLineSet(t *testing.T) {
 	}
 }
 
+func TestNewMinimum(t *testing.T) {
+	c, err := constraint.NewMinimum(release.SchemeMajorMinor, "3.12.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, l := range pyLines {
+		if c.Allows(l) {
+			got = append(got, l)
+		}
+	}
+	if want := []string{py312, py313, py314, py315}; !slices.Equal(got, want) {
+		t.Errorf("minimum allows %v, want %v", got, want)
+	}
+	if got := c.String(); got != ">=3.12" {
+		t.Errorf("String() = %q", got)
+	}
+	for _, v := range []string{"", "newest", "3.12_1"} {
+		if _, err := constraint.NewMinimum(release.SchemeMajorMinor, v); !errors.Is(err, constraint.ErrSyntax) {
+			t.Errorf("NewMinimum(%q) error = %v, want ErrSyntax", v, err)
+		}
+	}
+	if _, err := constraint.NewMinimum("calendar", "3.12"); err == nil {
+		t.Error("unknown scheme: no error")
+	}
+}
+
 func TestApply(t *testing.T) {
 	matrix := []string{py311, py312, py313}
 

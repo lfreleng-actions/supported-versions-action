@@ -15,6 +15,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/constraint"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/detect"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 )
 
 const (
@@ -708,5 +709,28 @@ func TestBadRuleRegex(t *testing.T) {
 		if _, err := detect.Detect(dir, tl); err == nil {
 			t.Errorf("regex %q: no error", re)
 		}
+	}
+}
+
+// TestNoSyntax checks that a tool declaring no constraint syntax reads
+// the value found as one pinned release, allowing its line and newer.
+func TestNoSyntax(t *testing.T) {
+	const file = "pin.properties"
+	tl := catalog.Tool{
+		VersionScheme: release.SchemeMajor,
+		Constraints: &catalog.Constraints{Detect: []catalog.DetectRule{
+			{File: file, Regex: `(?m)^version=(\S+)`},
+		}},
+	}
+	lines := strings.Fields("7 8 9")
+	d := detectOK(t, project(t, map[string]string{file: "version=8.14.3\n"}), tl)
+	if !d.Found || d.Text != "8.14.3" || d.Origin != file {
+		t.Fatalf("detection = %+v", d)
+	}
+	if got := allowed(d, lines); !slices.Equal(got, strings.Fields("8 9")) {
+		t.Errorf("allows %v, want [8 9]", got)
+	}
+	if _, err := detect.Detect(project(t, map[string]string{file: "version=current\n"}), tl); !errors.Is(err, constraint.ErrSyntax) {
+		t.Errorf("error = %v, want ErrSyntax", err)
 	}
 }
