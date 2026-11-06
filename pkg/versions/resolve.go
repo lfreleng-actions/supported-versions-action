@@ -244,21 +244,39 @@ func (r *Resolver) report(id string, t catalog.Tool, f facts, res policy.Result,
 			sum = c.url
 		}
 		rep.Lines = append(rep.Lines, Line{
-			Line:        l.Line,
-			Status:      l.Status,
-			InMatrix:    l.InMatrix,
-			Reason:      l.Reason,
-			LTS:         l.LTS,
-			Installable: l.Installable,
-			Newest:      l.Newest,
-			ChecksumURL: sum,
-			Released:    formatDate(fa.Released),
-			EOAS:        formatDate(fa.EOASFrom),
-			EOL:         formatDate(l.EOL),
-			DaysToEOL:   l.DaysToEOL,
+			Line:          l.Line,
+			Status:        l.Status,
+			InMatrix:      l.InMatrix,
+			Reason:        l.Reason,
+			LTS:           l.LTS,
+			Installable:   l.Installable,
+			Newest:        l.Newest,
+			ChecksumURL:   sum,
+			Compatibility: compatibility(t, l.Line),
+			Released:      formatDate(fa.Released),
+			EOAS:          formatDate(fa.EOASFrom),
+			EOL:           formatDate(l.EOL),
+			DaysToEOL:     l.DaysToEOL,
 		})
 	}
 	return rep
+}
+
+// compatibility returns the ranges of other tools' lines the catalog
+// records for one of t's lines, or nil when it records none.
+func compatibility(t catalog.Tool, line string) map[string]LineRange {
+	var out map[string]LineRange
+	for other, ranges := range t.Compatibility {
+		r, ok := ranges[line]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]LineRange)
+		}
+		out[other] = LineRange{Min: r.Min, Max: r.Max}
+	}
+	return out
 }
 
 func (r *Resolver) policySummary(id string, p catalog.Policy) PolicySummary {
