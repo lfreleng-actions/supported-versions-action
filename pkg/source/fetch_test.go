@@ -677,7 +677,10 @@ func testSharedContextEnding(t *testing.T, stage string, cause error, cached boo
 			return ctx.Err()
 		}
 	}
-	res, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), hs.url(), f.opts.MaxAge)
+	res, live, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), request{method: http.MethodGet, url: hs.url()}, f.opts.MaxAge)
+	if live != nil {
+		t.Errorf("live = %v, want nil for a GET", live)
+	}
 	if hs.hits.Load() != 1 {
 		t.Errorf("requests = %d, want 1", hs.hits.Load())
 	}
