@@ -384,6 +384,61 @@ jobs:
             "$report_file" > /dev/null ||
             fail "no matrix line names its Java compatibility and checksum"
 
+      - name: "Write the rust fixture"
+        shell: bash
+        run: |
+          # Write the rust fixture
+          set -euo pipefail
+          dir="$RUNNER_TEMP/rust-fixture"
+          mkdir -p "$dir"
+          printf '[package]\nname = "fixture"\nrust-version = "%s"\n' \
+            "1.80" > "$dir/Cargo.toml"
+          cat "$dir/Cargo.toml"
+
+      - name: "Matrix: rust, detected constraint"
+        id: rust
+        uses: $/
+        with:
+          tool: rust
+          path_prefix: ${{ runner.temp }}/rust-fixture
+
+      - name: "Check: rust matrix"
+        shell: bash
+        env:
+          MATRIX_JSON: ${{ steps.rust.outputs.matrix_json }}
+          SUPPORTED: ${{ steps.rust.outputs.supported_versions }}
+          LATEST: ${{ steps.rust.outputs.latest }}
+          REPORT: ${{ steps.rust.outputs.report_path }}
+        run: |
+          # Check: rust matrix
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          jqr() {
+            local out
+            out=$(jq -r "$@") || return 1
+            printf '%s' "${out//$'\r'/}"
+          }
+          printf '%s\n' "$MATRIX_JSON"
+          [ "$(jqr -c 'keys' <<< "$MATRIX_JSON")" = '["rust-version"]' ] ||
+            fail "matrix_json keys are not exactly rust-version"
+          # Six numeric lines, then the stable label.
+          jq -e '.["rust-version"] | length == 7 and .[-1] == "stable" and
+            (.[:-1] | all(test("^[0-9]+\\.[0-9]+$")))' \
+            <<< "$MATRIX_JSON" > /dev/null ||
+            fail "matrix_json is not six major.minor lines and then stable"
+          last=$(jqr '.["rust-version"][-2]' <<< "$MATRIX_JSON")
+          [ "$LATEST" = "$last" ] || fail "latest '$LATEST' is not '$last'"
+          want=$(jqr '.["rust-version"][:-1] | join(" ")' <<< "$MATRIX_JSON")
+          [ "${SUPPORTED//$'\r'/}" = "$want" ] ||
+            fail "supported_versions '$SUPPORTED' is not '$want'"
+          report_file="${REPORT//\\//}"
+          [ "$(jqr '.tool' "$report_file")" = rust ] ||
+            fail "the report's tool is not rust"
+          origin=$(jqr '.constraint.origin' "$report_file")
+          want="Cargo.toml:package.rust-version"
+          [ "$origin" = "$want" ] ||
+            fail "constraint origin '$origin' is not $want"
+
       - name: "Matrix: python, matrix_key"
         id: key
         uses: $/
