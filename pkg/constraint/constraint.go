@@ -5,8 +5,8 @@
 // and decides which release lines it allows.
 //
 // A constraint is evaluated per release line, because the matrix it
-// narrows is a list of lines. Under pep440, go-directive and
-// java-release each clause's version is cut to the scheme's line
+// narrows is a list of lines. Under pep440, go-directive, semver-min
+// and java-release each clause's version is cut to the scheme's line
 // before it is compared; under semver-range and maven-range a line is
 // allowed when some version of it satisfies the range. Apply narrows a matrix by a
 // constraint and reports the outcome.
@@ -163,8 +163,8 @@ func (c Constraint) String() string {
 // Parse parses constraint text written in syntax for a tool whose
 // release lines follow scheme. Text that does not parse returns an
 // error wrapping ErrSyntax, as does pep440 text that is empty or holds
-// nothing but commas and whitespace, and semver-range, java-release
-// and maven-range text that is empty or blank.
+// nothing but commas and whitespace, and semver-range, semver-min,
+// java-release and maven-range text that is empty or blank.
 func Parse(syntax, scheme, text string) (Constraint, error) {
 	if !knownScheme(scheme) {
 		return Constraint{}, fmt.Errorf("unknown version scheme %q", scheme)
@@ -176,6 +176,8 @@ func Parse(syntax, scheme, text string) (Constraint, error) {
 		return parseGoDirective(scheme, text)
 	case SyntaxSemverRange:
 		return parseSemverRange(scheme, text)
+	case SyntaxSemverMin:
+		return parseSemverMin(scheme, text)
 	case SyntaxJavaRelease:
 		return parseJavaRelease(scheme, text)
 	case SyntaxMavenRange:
