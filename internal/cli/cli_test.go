@@ -140,8 +140,8 @@ func TestOfflineSnapshot(t *testing.T) {
 	r := h.run("--offline", "--no-cache", flagFormat, formatJSON, cmdMatrix, toolPython)
 	r.want(t, ExitOK)
 	src, ok := validReport(t, []byte(r.stdout))["source"].(map[string]any)
-	if !ok || src["kind"] != "snapshot" || src["snapshot_date"] != "2026-11-05" {
-		t.Errorf("source = %v, want the snapshot of 2026-11-05", src)
+	if !ok || src["kind"] != "snapshot" || src["snapshot_date"] != "2026-11-06" {
+		t.Errorf("source = %v, want the snapshot of 2026-11-06", src)
 	}
 
 	snap := embeddedSnapshot(t)
@@ -188,15 +188,18 @@ func TestList(t *testing.T) {
 	r := h.run("list")
 	r.want(t, ExitOK)
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
-	if len(lines) != 7 || !strings.HasPrefix(lines[0], "ID") ||
-		!strings.HasPrefix(lines[1], "go ") || !strings.HasPrefix(lines[2], "gradle ") ||
-		!strings.HasPrefix(lines[3], "java ") || !strings.HasPrefix(lines[4], "maven ") ||
-		!strings.HasPrefix(lines[5], "nodejs ") || !strings.HasPrefix(lines[6], "python ") {
-		t.Errorf("list =\n%s", r.stdout)
+	ids := []string{"go", "gradle", "java", "maven", "nodejs", "python", "rust"}
+	if len(lines) != len(ids)+1 || !strings.HasPrefix(lines[0], "ID") {
+		t.Fatalf("list =\n%s", r.stdout)
+	}
+	for i, id := range ids {
+		if !strings.HasPrefix(lines[i+1], id+" ") {
+			t.Errorf("list row %d = %q, want tool %s", i+1, lines[i+1], id)
+		}
 	}
 	wantContains(t, "list", r.stdout, "cpython,python3,py", "python-version", "endoflife,actions-manifest",
 		"Java (Eclipse Temurin)", "endoflife,adoptium", "Apache Maven", "endoflife,maven-metadata",
-		"endoflife,gradle-services")
+		"endoflife,gradle-services", "rust-version", "endoflife,rust-channel")
 
 	r = h.run(flagFormat, formatJSON, "list")
 	r.want(t, ExitOK)
@@ -204,12 +207,13 @@ func TestList(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 6 || rows[0].ID != "go" || rows[1].MatrixKey != "gradle-version" ||
+	if len(rows) != 7 || rows[0].ID != "go" || rows[1].MatrixKey != "gradle-version" ||
 		strings.Join(rows[1].Sources, ",") != "endoflife,gradle-services" || len(rows[1].Aliases) != 0 ||
 		rows[2].MatrixKey != "java-version" || strings.Join(rows[2].Sources, ",") != "endoflife,adoptium" ||
 		rows[3].MatrixKey != "maven-version" || strings.Join(rows[3].Sources, ",") != "endoflife,maven-metadata" ||
 		rows[4].MatrixKey != "node-version" ||
 		rows[5].MatrixKey != "python-version" || strings.Join(rows[5].Sources, ",") != "endoflife,actions-manifest" ||
+		rows[6].MatrixKey != "rust-version" || strings.Join(rows[6].Sources, ",") != "endoflife,rust-channel" ||
 		!slices.Equal(rows[0].Aliases, []string{"golang"}) {
 		t.Errorf("rows = %+v", rows)
 	}

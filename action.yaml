@@ -13,8 +13,8 @@ description: >-
 inputs:
   tool:
     description: >-
-      Catalog tool id or alias, such as python, go, node, java, maven or
-      gradle
+      Catalog tool id or alias, such as python, go, node, java, maven,
+      gradle or rust
     required: true
   mode:
     description: "Command to run: matrix, check or list"
@@ -68,7 +68,9 @@ inputs:
     description: >-
       Override the end-of-life behaviour of the policy: warn, strip,
       fail or allow. Empty keeps the catalog or overlay value; a
-      non-empty default would silently override both
+      non-empty default would silently override both. A tool whose
+      catalog entry allows end-of-life lines, such as rust, keeps
+      allow unless the overlay sets its behaviour
     required: false
     default: ""
   include_prerelease:
