@@ -19,6 +19,7 @@ const (
 	python = "python"
 	java   = "java"
 	maven  = "maven"
+	gradle = "gradle"
 )
 
 // demoPolicyCount is the path of the count the demo tools omit.
@@ -35,7 +36,7 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", java, maven, "nodejs", python}; !reflect.DeepEqual(got, want) {
+	if got, want := c.IDs(), []string{"go", gradle, java, maven, "nodejs", python}; !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -49,6 +50,7 @@ func TestEmbedded(t *testing.T) {
 		"MVN":     maven,
 		"Temurin": java,
 		"openjdk": java,
+		"Gradle":  gradle,
 	} {
 		id, tool, ok := c.Lookup(name)
 		if !ok || id != want || tool.Name == "" {
@@ -77,7 +79,7 @@ func TestEmbedded(t *testing.T) {
 
 func TestLoadValid(t *testing.T) {
 	c := loadValid(t)
-	want := []string{"gradle", "java", "legacy", maven, "node", python, "rust"}
+	want := []string{gradle, "java", "legacy", maven, "node", python, "rust"}
 	if got := c.IDs(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IDs() = %v, want %v", got, want)
 	}

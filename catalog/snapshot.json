@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "generated_at": "2026-11-05T22:12:57Z",
+  "generated_at": "2026-11-05T23:38:03Z",
   "endoflife": {
     "apache-maven": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "releases": [
         {
           "line": "3.0",
@@ -87,7 +87,7 @@
       ]
     },
     "eclipse-temurin": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "releases": [
         {
           "line": "8",
@@ -218,7 +218,7 @@
       ]
     },
     "go": {
-      "fetched_at": "2026-11-05T22:12:56Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "releases": [
         {
           "line": "1.10",
@@ -382,8 +382,109 @@
         }
       ]
     },
+    "gradle": {
+      "fetched_at": "2026-11-05T23:38:03Z",
+      "releases": [
+        {
+          "line": "1",
+          "released": "2012-06-12",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2014-07-01",
+          "is_eol": true,
+          "eol_from": "2014-07-01",
+          "latest": "1.12.0",
+          "latest_date": "2014-04-29"
+        },
+        {
+          "line": "2",
+          "released": "2014-07-01",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2016-08-15",
+          "is_eol": true,
+          "eol_from": "2016-08-15",
+          "latest": "2.14.1",
+          "latest_date": "2016-07-18"
+        },
+        {
+          "line": "3",
+          "released": "2016-08-15",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2017-06-14",
+          "is_eol": true,
+          "eol_from": "2017-06-14",
+          "latest": "3.5.1",
+          "latest_date": "2017-06-16"
+        },
+        {
+          "line": "4",
+          "released": "2017-06-14",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2018-11-26",
+          "is_eol": true,
+          "eol_from": "2018-11-26",
+          "latest": "4.10.3",
+          "latest_date": "2018-12-04"
+        },
+        {
+          "line": "5",
+          "released": "2018-11-23",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2019-11-08",
+          "is_eol": true,
+          "eol_from": "2019-11-08",
+          "latest": "5.6.4",
+          "latest_date": "2019-10-31"
+        },
+        {
+          "line": "6",
+          "released": "2019-11-08",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2021-04-09",
+          "is_eol": true,
+          "eol_from": "2023-02-10",
+          "latest": "6.9.4",
+          "latest_date": "2023-02-21"
+        },
+        {
+          "line": "7",
+          "released": "2021-04-09",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2023-02-10",
+          "is_eol": true,
+          "eol_from": "2025-07-31",
+          "latest": "7.6.6",
+          "latest_date": "2025-07-03"
+        },
+        {
+          "line": "8",
+          "released": "2023-02-10",
+          "lts": false,
+          "is_eoas": true,
+          "eoas_from": "2025-07-31",
+          "is_eol": false,
+          "latest": "8.14.6",
+          "latest_date": "2026-10-08"
+        },
+        {
+          "line": "9",
+          "released": "2025-07-31",
+          "lts": false,
+          "is_eoas": false,
+          "is_eol": false,
+          "latest": "9.8.2",
+          "latest_date": "2026-10-19"
+        }
+      ]
+    },
     "nodejs": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "releases": [
         {
           "line": "1",
@@ -674,7 +775,7 @@
       ]
     },
     "python": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "releases": [
         {
           "line": "2.6",
@@ -871,7 +972,7 @@
   },
   "actions_manifest": {
     "actions/go-versions": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "lines": {
         "1.10": {
           "newest_stable": "1.10.8"
@@ -933,7 +1034,7 @@
       }
     },
     "actions/node-versions": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "lines": {
         "10": {
           "newest_stable": "10.24.1"
@@ -974,7 +1075,7 @@
       }
     },
     "actions/python-versions": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "lines": {
         "3.0": {
           "newest_stable": "3.0.1"
@@ -1038,7 +1139,7 @@
     }
   },
   "adoptium": {
-    "fetched_at": "2026-11-05T22:12:57Z",
+    "fetched_at": "2026-11-05T23:38:03Z",
     "lines": [
       "8",
       "11",
@@ -1058,7 +1159,7 @@
   },
   "maven_metadata": {
     "org.apache.maven:apache-maven": {
-      "fetched_at": "2026-11-05T22:12:57Z",
+      "fetched_at": "2026-11-05T23:38:03Z",
       "lines": {
         "2.0": {
           "newest_stable": "2.0.11"
@@ -1104,6 +1205,51 @@
         "4.0": {
           "newest_prerelease": "4.0.0-rc-7"
         }
+      }
+    }
+  },
+  "gradle_services": {
+    "fetched_at": "2026-11-05T23:38:03Z",
+    "lines": {
+      "0": {
+        "newest_stable": "0.9.2",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-0.9.2-bin.zip.sha256"
+      },
+      "1": {
+        "newest_stable": "1.12",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-1.12-bin.zip.sha256"
+      },
+      "2": {
+        "newest_stable": "2.14.1",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-2.14.1-bin.zip.sha256"
+      },
+      "3": {
+        "newest_stable": "3.5.1",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-3.5.1-bin.zip.sha256"
+      },
+      "4": {
+        "newest_stable": "4.10.3",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-4.10.3-bin.zip.sha256"
+      },
+      "5": {
+        "newest_stable": "5.6.4",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-5.6.4-bin.zip.sha256"
+      },
+      "6": {
+        "newest_stable": "6.9.4",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-6.9.4-bin.zip.sha256"
+      },
+      "7": {
+        "newest_stable": "7.6.6",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-7.6.6-bin.zip.sha256"
+      },
+      "8": {
+        "newest_stable": "8.14.6",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-8.14.6-bin.zip.sha256"
+      },
+      "9": {
+        "newest_stable": "9.8.2",
+        "checksum_url": "https://services.gradle.org/distributions/gradle-9.8.2-bin.zip.sha256"
       }
     }
   }

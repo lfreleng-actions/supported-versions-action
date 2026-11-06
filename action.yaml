@@ -13,7 +13,8 @@ description: >-
 inputs:
   tool:
     description: >-
-      Catalog tool id or alias, such as python, go, node, java or maven
+      Catalog tool id or alias, such as python, go, node, java, maven or
+      gradle
     required: true
   mode:
     description: "Command to run: matrix, check or list"
