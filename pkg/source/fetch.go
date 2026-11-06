@@ -49,6 +49,11 @@ var (
 	// ErrNoData reports that neither the network nor the cache could
 	// supply a response.
 	ErrNoData = errors.New("no data available")
+	// ErrTransient marks a check's rejection of a 200 response as
+	// passing, such as a rate limit an API reports in its body: the
+	// Post retries it like a 429 and, when retries run out, falls back
+	// as for any other failure, to a cached entry or ErrNoData.
+	ErrTransient = errors.New("transient upstream failure")
 	// errRedirect reports a redirect the fetcher refused to follow.
 	errRedirect = errors.New("redirect to a different host refused")
 	// errBudget is the cause of a shared fetch's context ending because
@@ -134,6 +139,7 @@ type call struct {
 	done    chan struct{}
 	cancel  context.CancelFunc
 	res     Result
+	live    *rejected // the last live body, when res is a cached fallback
 	err     error
 	waiters int
 }
@@ -232,20 +238,40 @@ func (f *Fetcher) Get(ctx context.Context, url string) (Result, error) {
 // maxAge and Options.MaxAge. Concurrent Gets of one URL share the
 // fetch the first of them started, and with it that call's maxAge.
 func (f *Fetcher) GetMaxAge(ctx context.Context, url string, maxAge time.Duration) (Result, error) {
+	return f.do(ctx, request{method: http.MethodGet, url: url}, maxAge)
+}
+
+// Offline reports whether the fetcher never touches the network.
+func (f *Fetcher) Offline() bool {
+	return f.opts.Offline
+}
+
+// request is one upstream request.
+type request struct {
+	method string
+	url    string
+	body   []byte
+	header http.Header
+	check  func([]byte) error
+}
+
+// do runs req through the cache and the in-flight calls, serving a
+// cached entry for up to the longer of maxAge and Options.MaxAge.
+func (f *Fetcher) do(ctx context.Context, req request, maxAge time.Duration) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	key := cache.Key(http.MethodGet, url, nil)
+	key := cache.Key(req.method, req.url, req.body)
 	f.mu.Lock()
 	c, ok := f.inflight[key]
 	if !ok {
-		c = f.start(ctx, key, url, max(maxAge, f.opts.MaxAge))
+		c = f.start(ctx, key, req, max(maxAge, f.opts.MaxAge))
 	}
 	c.waiters++
 	f.mu.Unlock()
 	select {
 	case <-c.done:
-		return c.res.clone(), c.err
+		return f.answer(key, req, c, maxAge)
 	case <-ctx.Done():
 		f.leave(key, c)
 		return Result{}, ctx.Err()
@@ -255,19 +281,19 @@ func (f *Fetcher) GetMaxAge(ctx context.Context, url string, maxAge time.Duratio
 // start launches the shared fetch for key and registers it as in
 // flight. The caller holds f.mu. The fetch keeps ctx's values but not
 // its cancellation or deadline, and runs for at most budget.
-func (f *Fetcher) start(ctx context.Context, key, url string, maxAge time.Duration) *call {
+func (f *Fetcher) start(ctx context.Context, key string, req request, maxAge time.Duration) *call {
 	sctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), f.budget(), errBudget)
 	c := &call{done: make(chan struct{}), cancel: cancel}
 	f.inflight[key] = c
 	go func() {
 		defer cancel()
-		res, err := f.get(sctx, key, url, maxAge)
+		res, live, err := f.get(sctx, key, req, maxAge)
 		f.mu.Lock()
 		if f.inflight[key] == c {
 			delete(f.inflight, key)
 		}
 		f.mu.Unlock()
-		c.res, c.err = res, err
+		c.res, c.live, c.err = res, live, err
 		close(c.done)
 	}()
 	return c
@@ -305,35 +331,34 @@ func (r Result) clone() Result {
 	return r
 }
 
-func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration) (Result, error) {
-	var (
-		entry cache.Entry
-		have  bool
-	)
-	if f.opts.Cache != nil && !f.opts.Refresh {
-		entry, have = f.opts.Cache.Get(key)
-		have = have && entry.Method == http.MethodGet && entry.URL == url
-	}
+// get fetches req. When retries run out on a live body req's check
+// rejected as transient and a cached entry is served instead, get also
+// returns that body, so a caller sharing the request can judge it.
+func (f *Fetcher) get(ctx context.Context, key string, req request, maxAge time.Duration) (Result, *rejected, error) {
+	url := req.url
+	entry, have := f.cached(key, req)
 	now := f.opts.Now()
 	age := now.Sub(entry.FetchedAt)
 	fresh := have && age >= 0 && age < maxAge
 	switch {
 	case fresh:
 		if err := f.fits(entry); err != nil {
-			return Result{}, err
+			return Result{}, nil, err
 		}
-		return Result{Body: entry.Body, Source: OriginCache, FetchedAt: entry.FetchedAt}, nil
+		return Result{Body: entry.Body, Source: OriginCache, FetchedAt: entry.FetchedAt}, nil, nil
 	case f.opts.Offline && have:
 		if err := f.fits(entry); err != nil {
-			return Result{}, err
+			return Result{}, nil, err
 		}
-		return f.stale(url, entry, age, errors.New("offline")), nil
+		return f.stale(url, entry, age, errors.New("offline")), nil, nil
 	case f.opts.Offline:
-		return Result{}, fmt.Errorf("%s: %w: offline with no cached entry", url, ErrNoData)
+		return Result{}, nil, fmt.Errorf("%s: %w: offline with no cached entry", url, ErrNoData)
 	}
 
+	// Only a GET revalidates: a server holding a matching ETag answers
+	// a conditional POST with 412, not 304 (RFC 9110, section 13.1.1).
 	var cond *cache.Entry
-	if have {
+	if have && req.method == http.MethodGet {
 		cond = &entry
 	}
 	var lastErr error
@@ -341,24 +366,24 @@ func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration
 		if attempt > 0 {
 			if err := f.opts.Sleep(ctx, f.delay(attempt, lastErr)); err != nil {
 				if !spent(ctx) {
-					return Result{}, err
+					return Result{}, nil, err
 				}
 				lastErr = fmt.Errorf("%w; then %w", lastErr, errBudget)
 				break
 			}
 		}
-		res, err := f.attempt(ctx, key, url, cond)
+		res, err := f.attempt(ctx, key, req, cond)
 		if err == nil {
-			return res, nil
+			return res, nil, nil
 		}
 		var re *retryable
 		if !errors.As(err, &re) {
-			return Result{}, err
+			return Result{}, nil, err
 		}
 		lastErr = err
 		if ctx.Err() != nil {
 			if !spent(ctx) {
-				return Result{}, ctx.Err()
+				return Result{}, nil, ctx.Err()
 			}
 			lastErr = fmt.Errorf("%w; %w", err, errBudget)
 			break
@@ -366,11 +391,13 @@ func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration
 	}
 	if have {
 		if err := f.fits(entry); err != nil {
-			return Result{}, fmt.Errorf("%w; after %w", err, lastErr)
+			return Result{}, nil, fmt.Errorf("%w; after %w", err, lastErr)
 		}
-		return f.stale(url, entry, f.opts.Now().Sub(entry.FetchedAt), lastErr), nil
+		var live *rejected
+		errors.As(lastErr, &live)
+		return f.stale(url, entry, f.opts.Now().Sub(entry.FetchedAt), lastErr), live, nil
 	}
-	return Result{}, fmt.Errorf("%s: %w: %w", url, ErrNoData, lastErr)
+	return Result{}, nil, fmt.Errorf("%s: %w: %w", url, ErrNoData, lastErr)
 }
 
 // spent reports whether ctx, a shared fetch's context, ended because
@@ -421,12 +448,22 @@ func (f *Fetcher) delay(attempt int, lastErr error) time.Duration {
 }
 
 // attempt makes one request. Errors worth retrying are *retryable.
-func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entry) (Result, error) {
+func (f *Fetcher) attempt(ctx context.Context, key string, r request, cond *cache.Entry) (Result, error) {
+	url := r.url
 	ctx, cancel := context.WithTimeout(ctx, f.opts.Timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	var body io.Reader
+	if r.body != nil {
+		body = bytes.NewReader(r.body)
+	}
+	req, err := http.NewRequestWithContext(ctx, r.method, url, body)
 	if err != nil {
 		return Result{}, fmt.Errorf("%s: %w", url, err)
+	}
+	for name, values := range r.header {
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
 	}
 	req.Header.Set("User-Agent", UserAgent)
 	if cond != nil {
@@ -452,8 +489,22 @@ func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entr
 		if err != nil {
 			return Result{}, fmt.Errorf("%s: %w", url, err)
 		}
+		if r.check != nil {
+			if err = r.check(body); err != nil {
+				rj := &rejected{err: fmt.Errorf("%s: %w", url, err), body: body, fetchedAt: f.opts.Now()}
+				if errors.Is(err, ErrTransient) {
+					// The body travels with the retry, so that a caller
+					// sharing the request can still judge the last one.
+					return Result{}, &retryable{
+						err:        rj,
+						retryAfter: retryAfter(resp.Header.Get("Retry-After"), f.opts.Now()),
+					}
+				}
+				return Result{}, rj
+			}
+		}
 		e := cache.Entry{
-			Method:       http.MethodGet,
+			Method:       r.method,
 			URL:          url,
 			Status:       resp.StatusCode,
 			ETag:         resp.Header.Get("ETag"),

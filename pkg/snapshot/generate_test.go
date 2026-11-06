@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"slices"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
@@ -41,12 +43,18 @@ const (
 	deltaID      = "org.example:delta"
 	gradlePath   = "/versions/all"
 	rustPath     = "/dist/channel-rust-stable.toml"
+	graphqlPath  = "/graphql"
+	etaRepo      = "astral-sh/uv"
+	thetaRepo    = "helm/helm"
+	helm431      = "v4.3.1"
 )
 
 // twoTools is a catalog of two tools with their own endoflife products
 // and one shared versions manifest, a third reading Adoptium, a fourth
 // reading Maven Central metadata, a fifth reading Gradle services and
-// a sixth reading the Rust stable channel.
+// a sixth reading the Rust stable channel, and two more reading GitHub
+// releases: eta reads astral-sh/uv and theta reads helm/helm, the
+// repositories of the recorded GraphQL response.
 const twoTools = `schema: 1
 tools:
   alpha:
@@ -94,6 +102,20 @@ tools:
     sources:
       - {type: rust-channel}
     policy: {rule: all, admit: installable}
+  eta:
+    name: Eta
+    version_scheme: major.minor
+    matrix_key: eta-version
+    sources:
+      - {type: github-releases, repository: astral-sh/uv}
+    policy: {rule: all}
+  theta:
+    name: Theta
+    version_scheme: major
+    matrix_key: theta-version
+    sources:
+      - {type: github-releases, repository: helm/helm}
+    policy: {rule: all}
 `
 
 var routes = map[string]string{
@@ -121,6 +143,20 @@ var routes = map[string]string{
 {"version":"2.9","checksumUrl":"https://example.test/2.9.sha256"},
 {"version":"3.1.0-20261105051641+0000","snapshot":true,"nightly":true}]`,
 	rustPath: "date = \"2026-10-15\"\n[pkg.rust]\nversion = \"1.99.1 (58cf8f9c3 2026-10-13)\"\n",
+}
+
+// recordedReleases is the GitHub GraphQL response recorded on
+// 2026-11-06 for astral-sh/uv (r0) and helm/helm (r1), the aliases
+// the query gives them in sorted order; its provenance is in the
+// githubreleases tests that share it.
+const recordedReleases = "../source/githubreleases/testdata/releases-recorded.json"
+
+func init() {
+	body, err := os.ReadFile(recordedReleases)
+	if err != nil {
+		panic(err)
+	}
+	routes[graphqlPath] = string(body)
 }
 
 // fixedNow is the clock every generation test uses.
@@ -153,7 +189,7 @@ func newUpstream(t *testing.T, routes map[string]string) *upstream {
 	return u
 }
 
-func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client, *gradleservices.Client, *rustchannel.Client) {
+func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client, *gradleservices.Client, *rustchannel.Client, *githubreleases.Client) {
 	opts.Sleep = func(context.Context, time.Duration) error { return nil }
 	opts.Retries = -1
 	opts.Now = func() time.Time { return fixedNow }
@@ -170,7 +206,9 @@ func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmani
 	g.BaseURL = u.srv.URL + "/"
 	r := rustchannel.New(f)
 	r.BaseURL = u.srv.URL + "/"
-	return eol, m, a, mm, g, r
+	gh := githubreleases.New(f, "test-token")
+	gh.BaseURL = u.srv.URL + "/"
+	return eol, m, a, mm, g, r, gh
 }
 
 func twoToolCatalog(t *testing.T) *catalog.Catalog {
@@ -187,8 +225,8 @@ func clock() time.Time { return fixedNow }
 func generate(t *testing.T, routes map[string]string) (*snapshot.Snapshot, *upstream) {
 	t.Helper()
 	u := newUpstream(t, routes)
-	eol, m, a, mm, g, r := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
+	eol, m, a, mm, g, r, gh := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, gh, clock)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -201,6 +239,15 @@ func day(s string) *time.Time {
 		panic(err)
 	}
 	return &d
+}
+
+// stampAt returns the RFC 3339 timestamp s.
+func stampAt(s string) *time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		panic(err)
+	}
+	return &t
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -275,6 +322,35 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+func TestGenerateGitHubReleases(t *testing.T) {
+	s, u := generate(t, routes)
+	stamp := fixedNow.Truncate(time.Second)
+	if n := u.hits[graphqlPath]; n != 1 {
+		t.Errorf("GraphQL queried %d times, want 1 for both repositories", n)
+	}
+	etaLines, fetchedAt, ok := s.GitHubLines(etaRepo)
+	wantEta := map[string]githubreleases.Line{
+		"0.13": {Released: day("2026-10-09"), NewestStable: "0.13.7", NewestStablePublished: stampAt("2026-11-03T02:45:04Z")},
+		"0.12": {Released: day("2026-10-03"), NewestStable: "0.12.24", NewestStablePublished: stampAt("2026-10-08T20:06:20Z")},
+	}
+	if !ok || !fetchedAt.Equal(stamp) || !reflect.DeepEqual(etaLines, wantEta) {
+		t.Errorf("GitHubLines(%s) = %+v, %v, %v; want %+v", etaRepo, etaLines, fetchedAt, ok, wantEta)
+	}
+	// Under the major scheme 4.1 to 4.3 make line 4, dated by v4.2.3,
+	// its first stable release, and 3.20 to 3.22 make line 3; each keeps
+	// its newest pre-release, v4.3.0-rc.1 and v3.22.0-rc.1.
+	thetaLines, _, ok := s.GitHubLines(thetaRepo)
+	wantTheta := map[string]githubreleases.Line{
+		"4": {Released: day("2026-07-09"), NewestStable: helm431, NewestStablePublished: stampAt("2026-10-15T01:08:37Z"),
+			NewestPrerelease: "v4.3.0-rc.1", NewestPrereleasePublished: stampAt("2026-08-31T22:09:46Z")},
+		"3": {Released: day("2026-07-09"), NewestStable: "v3.22.1", NewestStablePublished: stampAt("2026-10-15T17:02:01Z"),
+			NewestPrerelease: "v3.22.0-rc.1", NewestPrereleasePublished: stampAt("2026-08-31T22:56:05Z")},
+	}
+	if !ok || !reflect.DeepEqual(thetaLines, wantTheta) {
+		t.Errorf("GitHubLines(%s) = %+v, %v; want %+v", thetaRepo, thetaLines, ok, wantTheta)
+	}
+}
+
 func TestGenerateDeterministic(t *testing.T) {
 	a, _ := generate(t, routes)
 	b, _ := generate(t, routes)
@@ -299,15 +375,28 @@ func TestGenerateFailsOnAnyFetchError(t *testing.T) {
 		}
 	}
 	u := newUpstream(t, missing)
-	eol, m, a, mm, g, r := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
+	eol, m, a, mm, g, r, gh := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, gh, clock)
 	if !errors.Is(err, source.ErrNotFound) || s != nil {
 		t.Errorf("Generate with a 404 = %v, %v; want ErrNotFound and no snapshot", s, err)
 	}
 
-	eol, m, a, mm, g, r = u.clients(source.Options{Offline: true})
-	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
+	eol, m, a, mm, g, r, gh = u.clients(source.Options{Offline: true})
+	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, gh, clock)
 	if !errors.Is(err, source.ErrNoData) || s != nil {
 		t.Errorf("Generate offline = %v, %v; want ErrNoData and no snapshot", s, err)
+	}
+}
+
+func TestGenerateNeedsGitHubToken(t *testing.T) {
+	u := newUpstream(t, routes)
+	eol, m, a, mm, g, r, gh := u.clients(source.Options{})
+	gh.Token = ""
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, gh, clock)
+	if !errors.Is(err, githubreleases.ErrNoToken) || s != nil {
+		t.Errorf("Generate without a token = %v, %v; want ErrNoToken and no snapshot", s, err)
+	}
+	if n := u.hits[graphqlPath]; n != 0 {
+		t.Errorf("GraphQL queried %d times without a token", n)
 	}
 }

@@ -24,10 +24,12 @@ import (
 
 // facts is what the sources of one tool supplied.
 type facts struct {
-	// facts are the lifecycle facts of every endoflife source.
+	// facts are the lifecycle facts of every endoflife,
+	// github-releases and static source.
 	facts []release.Facts
 	// availability merges every actions-manifest, adoptium,
-	// maven-metadata, gradle-services and rust-channel source;
+	// maven-metadata, gradle-services, rust-channel and
+	// github-releases source;
 	// nil when the tool has none or none could be supplied.
 	availability map[string]policy.Build
 	// checksums maps a line to the checksum a gradle-services source
@@ -70,15 +72,27 @@ type fetched struct {
 	err        error
 }
 
-// gather fetches the facts of every source of tool concurrently. When
-// line is not "", endoflife sources fetch that one line rather than
-// the whole list, and the availability is cut to it.
+// gather fetches the facts of every source of tool concurrently, its
+// github-releases sources together in one request. When line is not
+// "", endoflife sources fetch that one line rather than the whole
+// list, and the facts and availability of the other sources are cut
+// to it.
 func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (facts, error) {
 	results := make([]fetched, len(tool.Sources))
+	var github []int
 	var wg sync.WaitGroup
 	for i, src := range tool.Sources {
+		if src.Type == snapshot.TypeGitHubReleases {
+			github = append(github, i)
+			continue
+		}
 		wg.Go(func() {
 			results[i] = r.fetch(ctx, tool.VersionScheme, src, line)
+		})
+	}
+	if len(github) > 0 {
+		wg.Go(func() {
+			r.fetchGitHubReleases(ctx, tool, github, line, results)
 		})
 	}
 	wg.Wait()
@@ -107,6 +121,7 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 			out.checksums[l] = c
 		}
 	}
+	out.facts = mergeFacts(out.facts)
 	for _, res := range results {
 		withdraw(out.facts, res.withdrawn)
 		raiseLatest(out.facts, res.newest, res.newer)
@@ -202,6 +217,8 @@ func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source,
 		return r.fetchGradleServices(ctx, scheme, line)
 	case snapshot.TypeRustChannel:
 		return r.fetchRustChannel(ctx, scheme, line)
+	case snapshot.TypeStatic:
+		return fetchStatic(scheme, src.Lines, line)
 	default:
 		return fetched{err: fmt.Errorf("%w %q", ErrUnsupportedSource, src.Type)}
 	}
