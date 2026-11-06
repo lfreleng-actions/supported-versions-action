@@ -30,6 +30,7 @@ output, annotation and job summary.
 | Node.js                | `nodejs` | `node`                      | `node-version`   | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                               |
 | Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk` | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`)              |
 | Apache Maven           | `maven`  | `mvn`                       | `maven-version`  | Supported, no pre-releases  | `.mvn/wrapper/maven-wrapper.properties` (`distributionUrl`), `pom.xml` (`prerequisites`) |
+| Gradle                 | `gradle` |                             | `gradle-version` | Supported                   | `gradle/wrapper/gradle-wrapper.properties` (`distributionUrl`)                           |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -63,6 +64,16 @@ version such as `3.9.6` keeps that release and newer. The Maven wrapper's
 and 2, which are not minor lines; the action leaves them out. Each line
 of the JSON report at `report_path` names its newest release, such as
 `3.9.16`, for an installer that needs a full version.
+
+Gradle lines are major releases such as `8`, and a line enters the
+matrix once `services.gradle.org` lists a final release of it; release
+candidates, milestones, nightlies and broken releases stay out. The
+Gradle wrapper's `distributionUrl` names the one release a build uses,
+such as `8.14.3`, which the matrix holds as a floor: `8.14.3` keeps 8
+and newer. Each line of the JSON report names its newest release, the
+`checksum_url` of that release's SHA-256 checksum, and under
+`compatibility.java` the newest Java line it runs on, from
+[Gradle's compatibility matrix](https://docs.gradle.org/current/userguide/compatibility.html).
 
 ## Usage Example
 
@@ -147,7 +158,7 @@ Pin the action and any other action to a commit SHA in real workflows.
 
 | Name                | Required | Default  | Description                                                                                                       |
 | ------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node`, `java` or `maven`                                       |
+| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node`, `java`, `maven` or `gradle`                             |
 | mode                | False    | `matrix` | `matrix`, `check` or `list` (the release lines of `tool`); any other value fails                                  |
 | version             | False    |          | Version to check; required in `check` mode and rejected in the others                                             |
 | constraint          | False    |          | Constraint applied to the matrix; wins over `path_prefix`; in `matrix` mode                                       |

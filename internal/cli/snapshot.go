@@ -14,6 +14,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 )
 
@@ -52,7 +53,9 @@ func (e *env) snapshotCmd(ctx context.Context, g *globals, args []string) error 
 	releases.BaseURL = e.hooks.adoptiumBaseURL
 	maven := mavenmeta.New(fetcher)
 	maven.BaseURL = e.hooks.mavenBaseURL
-	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, e.hooks.now)
+	gradle := gradleservices.New(fetcher)
+	gradle.BaseURL = e.hooks.gradleBaseURL
+	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, gradle, e.hooks.now)
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -381,6 +383,55 @@ tools:
 	}
 	if rep.Policy.Count != 2 || len(rep.Policy.Labels) != 1 {
 		t.Errorf("policy = %+v", rep.Policy)
+	}
+}
+
+func TestMatrixCompatibility(t *testing.T) {
+	cat, err := catalog.Parse([]byte(`schema: 1
+tools:
+  gochannel:
+    name: Go channel
+    version_scheme: major.minor
+    matrix_key: go-version
+    sources:
+      - {type: endoflife, product: go}
+    policy:
+      rule: latest
+      count: 2
+    compatibility:
+      runtime:
+        "1.27": {min: "17", max: "25"}
+        "1.26": {max: "24"}
+  runtime:
+    name: Runtime
+    version_scheme: major
+    matrix_key: runtime-version
+    sources:
+      - {type: endoflife, product: go}
+    policy:
+      rule: all
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := newUpstream(t)
+	r := newResolver(t, u, func(o *versions.Options) { o.Catalog = cat })
+	rep, err := r.Matrix(context.Background(), "gochannel", versions.MatrixRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := validated(t, rep)
+	if got := lineOf(t, rep, "1.27").Compatibility; !reflect.DeepEqual(got, map[string]versions.LineRange{"runtime": {Min: "17", Max: "25"}}) {
+		t.Errorf("1.27 compatibility = %+v", got)
+	}
+	if got := lineOf(t, rep, "1.26").Compatibility; !reflect.DeepEqual(got, map[string]versions.LineRange{"runtime": {Max: "24"}}) {
+		t.Errorf("1.26 compatibility = %+v", got)
+	}
+	if got := lineOf(t, rep, "1.25").Compatibility; got != nil {
+		t.Errorf("1.25 compatibility = %+v, want none", got)
+	}
+	if n := strings.Count(string(body), `"compatibility": {`); n != 2 {
+		t.Errorf("report names compatibility on %d lines, want 2:\n%s", n, body)
 	}
 }
 

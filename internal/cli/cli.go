@@ -80,6 +80,8 @@ type hooks struct {
 	adoptiumBaseURL string
 	// mavenBaseURL overrides the Maven Central repository root.
 	mavenBaseURL string
+	// gradleBaseURL overrides the Gradle services root.
+	gradleBaseURL string
 	// now overrides the clock.
 	now func() time.Time
 	// snapshot overrides the embedded snapshot.

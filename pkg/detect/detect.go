@@ -112,6 +112,10 @@ type finding struct {
 // origin, and later rules are not tried, because a broken constraint
 // should be fixed rather than silently replaced.
 //
+// A tool that declares no constraint syntax pins one release, such as
+// the version a Gradle wrapper names, and the constraint allows that
+// release's line and every newer line.
+//
 // An nvm alias in .nvmrc or .node-version, such as "lts/*", also wins:
 // the result has Alias set, Found false and no constraint, and the
 // caller resolves the alias from the release facts.
@@ -146,9 +150,12 @@ func Detect(dir string, tool catalog.Tool) (Detection, error) {
 			return d, nil
 		}
 		var c constraint.Constraint
-		if f.lines != nil {
+		switch {
+		case f.lines != nil:
 			c, err = constraint.NewLineSet(tool.VersionScheme, f.lines)
-		} else {
+		case syntax == "":
+			c, err = constraint.NewMinimum(tool.VersionScheme, f.text)
+		default:
 			c, err = constraint.Parse(syntax, tool.VersionScheme, f.text)
 		}
 		if err != nil {

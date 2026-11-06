@@ -188,14 +188,15 @@ func TestList(t *testing.T) {
 	r := h.run("list")
 	r.want(t, ExitOK)
 	lines := strings.Split(strings.TrimSuffix(r.stdout, "\n"), "\n")
-	if len(lines) != 6 || !strings.HasPrefix(lines[0], "ID") ||
-		!strings.HasPrefix(lines[1], "go ") || !strings.HasPrefix(lines[2], "java ") ||
-		!strings.HasPrefix(lines[3], "maven ") || !strings.HasPrefix(lines[4], "nodejs ") ||
-		!strings.HasPrefix(lines[5], "python ") {
+	if len(lines) != 7 || !strings.HasPrefix(lines[0], "ID") ||
+		!strings.HasPrefix(lines[1], "go ") || !strings.HasPrefix(lines[2], "gradle ") ||
+		!strings.HasPrefix(lines[3], "java ") || !strings.HasPrefix(lines[4], "maven ") ||
+		!strings.HasPrefix(lines[5], "nodejs ") || !strings.HasPrefix(lines[6], "python ") {
 		t.Errorf("list =\n%s", r.stdout)
 	}
 	wantContains(t, "list", r.stdout, "cpython,python3,py", "python-version", "endoflife,actions-manifest",
-		"Java (Eclipse Temurin)", "endoflife,adoptium", "Apache Maven", "endoflife,maven-metadata")
+		"Java (Eclipse Temurin)", "endoflife,adoptium", "Apache Maven", "endoflife,maven-metadata",
+		"endoflife,gradle-services")
 
 	r = h.run(flagFormat, formatJSON, "list")
 	r.want(t, ExitOK)
@@ -203,10 +204,12 @@ func TestList(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 5 || rows[0].ID != "go" || rows[1].MatrixKey != "java-version" ||
-		strings.Join(rows[1].Sources, ",") != "endoflife,adoptium" || rows[2].MatrixKey != "maven-version" ||
-		strings.Join(rows[2].Sources, ",") != "endoflife,maven-metadata" || rows[3].MatrixKey != "node-version" ||
-		rows[4].MatrixKey != "python-version" || strings.Join(rows[4].Sources, ",") != "endoflife,actions-manifest" ||
+	if len(rows) != 6 || rows[0].ID != "go" || rows[1].MatrixKey != "gradle-version" ||
+		strings.Join(rows[1].Sources, ",") != "endoflife,gradle-services" || len(rows[1].Aliases) != 0 ||
+		rows[2].MatrixKey != "java-version" || strings.Join(rows[2].Sources, ",") != "endoflife,adoptium" ||
+		rows[3].MatrixKey != "maven-version" || strings.Join(rows[3].Sources, ",") != "endoflife,maven-metadata" ||
+		rows[4].MatrixKey != "node-version" ||
+		rows[5].MatrixKey != "python-version" || strings.Join(rows[5].Sources, ",") != "endoflife,actions-manifest" ||
 		!slices.Equal(rows[0].Aliases, []string{"golang"}) {
 		t.Errorf("rows = %+v", rows)
 	}

@@ -8,7 +8,10 @@
 // The snapshot stores normalised data rather than raw response bodies:
 // the endoflife.date facts of each product, the newest stable and
 // pre-release build of each line of each versions manifest and each
-// Maven Central artifact, and the release lines Adoptium has builds of. It is small, and regenerating it produces diffs a reviewer can read.
+// Maven Central artifact, the release lines Adoptium has builds of, and
+// the newest Gradle release of each line with its checksum URL and the
+// line's withdrawn releases. It is small, and regenerating it produces
+// diffs a reviewer can read.
 package snapshot
 
 import (
@@ -24,6 +27,7 @@ import (
 	catalogdata "github.com/lfreleng-actions/supported-versions-action/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 )
 
 // Schema is the snapshot format version this package reads and writes.
@@ -45,13 +49,16 @@ const (
 	// TypeMavenMetadata is the catalog source type of an artifact's
 	// maven-metadata.xml on Maven Central.
 	TypeMavenMetadata = "maven-metadata"
+	// TypeGradleServices is the catalog source type of
+	// services.gradle.org.
+	TypeGradleServices = "gradle-services"
 )
 
 const day = 24 * time.Hour
 
 // Snapshot is the offline copy of the release facts of every
-// endoflife, actions-manifest, adoptium and maven-metadata source in
-// the catalog.
+// endoflife, actions-manifest, adoptium, maven-metadata and
+// gradle-services source in the catalog.
 type Snapshot struct {
 	// Schema is the format version, always Schema.
 	Schema int
@@ -69,6 +76,20 @@ type Snapshot struct {
 	// MavenMetadata maps a group:artifact coordinate to the lines of
 	// its Maven Central metadata.
 	MavenMetadata map[string]Manifest
+	// GradleServices is the snapshot of services.gradle.org, or nil
+	// when the catalog has no gradle-services source.
+	GradleServices *GradleServices
+}
+
+// GradleServices is the snapshot of the final Gradle releases
+// services.gradle.org lists.
+type GradleServices struct {
+	// FetchedAt is when the versions were fetched, in UTC, to the
+	// second.
+	FetchedAt time.Time
+	// Lines maps each release line to its newest release and its
+	// withdrawn releases.
+	Lines map[string]gradleservices.Line
 }
 
 // Adoptium is the snapshot of the release lines Adoptium has builds of.
@@ -137,6 +158,16 @@ func (s *Snapshot) MavenLines(artifact string) (lines map[string]actionsmanifest
 	return maps.Clone(m.Lines), m.FetchedAt, true
 }
 
+// GradleLines returns the newest Gradle release of each line, with
+// the line's withdrawn releases, and when the versions were fetched.
+// found is false when the snapshot has no gradle-services entry.
+func (s *Snapshot) GradleLines() (lines map[string]gradleservices.Line, fetchedAt time.Time, found bool) {
+	if s.GradleServices == nil {
+		return nil, time.Time{}, false
+	}
+	return maps.Clone(s.GradleServices.Lines), s.GradleServices.FetchedAt, true
+}
+
 // AdoptiumLines returns the release lines Adoptium has builds of and
 // when they were fetched. found is false when the snapshot has no
 // Adoptium entry.
@@ -172,6 +203,18 @@ type wireSnapshot struct {
 	ActionsManifest map[string]wireManifest `json:"actions_manifest"`
 	Adoptium        *wireAdoptium           `json:"adoptium,omitempty"`
 	MavenMetadata   map[string]wireManifest `json:"maven_metadata,omitempty"`
+	GradleServices  *wireGradleServices     `json:"gradle_services,omitempty"`
+}
+
+type wireGradleServices struct {
+	FetchedAt string                    `json:"fetched_at"`
+	Lines     map[string]wireGradleLine `json:"lines"`
+}
+
+type wireGradleLine struct {
+	NewestStable string   `json:"newest_stable,omitempty"`
+	ChecksumURL  string   `json:"checksum_url,omitempty"`
+	Broken       []string `json:"broken,omitempty"`
 }
 
 type wireAdoptium struct {
@@ -242,6 +285,12 @@ func (s *Snapshot) Marshal() ([]byte, error) {
 		w.MavenMetadata = make(map[string]wireManifest, len(s.MavenMetadata))
 		for artifact, m := range s.MavenMetadata {
 			w.MavenMetadata[artifact] = m.toWire()
+		}
+	}
+	if g := s.GradleServices; g != nil {
+		w.GradleServices = &wireGradleServices{FetchedAt: formatTime(g.FetchedAt), Lines: make(map[string]wireGradleLine, len(g.Lines))}
+		for line, l := range g.Lines {
+			w.GradleServices.Lines[line] = wireGradleLine{NewestStable: l.NewestStable, ChecksumURL: l.ChecksumURL, Broken: l.Broken}
 		}
 	}
 	if s.Adoptium != nil {
@@ -319,6 +368,16 @@ func Parse(data []byte) (*Snapshot, error) {
 		}
 		s.Adoptium = a
 	}
+	if wg := w.GradleServices; wg != nil {
+		g := &GradleServices{Lines: make(map[string]gradleservices.Line, len(wg.Lines))}
+		if g.FetchedAt, err = parseTime("gradle_services.fetched_at", wg.FetchedAt); err != nil {
+			return nil, err
+		}
+		for line, wl := range wg.Lines {
+			g.Lines[line] = gradleservices.Line{NewestStable: wl.NewestStable, ChecksumURL: wl.ChecksumURL, Broken: wl.Broken}
+		}
+		s.GradleServices = g
+	}
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
@@ -351,6 +410,20 @@ func (s *Snapshot) validate() error {
 	for _, artifact := range slices.Sorted(maps.Keys(s.MavenMetadata)) {
 		if _, ok := s.MavenMetadata[artifact].Lines[""]; ok {
 			return fmt.Errorf("snapshot: maven_metadata.%s: empty line", artifact)
+		}
+	}
+	if s.GradleServices != nil {
+		for _, line := range slices.Sorted(maps.Keys(s.GradleServices.Lines)) {
+			if line == "" {
+				return errors.New("snapshot: gradle_services: empty line")
+			}
+			l := s.GradleServices.Lines[line]
+			if l.NewestStable == "" && len(l.Broken) == 0 {
+				return fmt.Errorf("snapshot: gradle_services: line %q has neither newest_stable nor broken", line)
+			}
+			if slices.Contains(l.Broken, "") {
+				return fmt.Errorf("snapshot: gradle_services: line %q has an empty broken release", line)
+			}
 		}
 	}
 	if s.Adoptium != nil {
