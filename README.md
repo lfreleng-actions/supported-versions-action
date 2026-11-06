@@ -31,6 +31,7 @@ output, annotation and job summary.
 | Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk` | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`)              |
 | Apache Maven           | `maven`  | `mvn`                       | `maven-version`  | Supported, no pre-releases  | `.mvn/wrapper/maven-wrapper.properties` (`distributionUrl`), `pom.xml` (`prerequisites`) |
 | Gradle                 | `gradle` |                             | `gradle-version` | Supported                   | `gradle/wrapper/gradle-wrapper.properties` (`distributionUrl`)                           |
+| Rust                   | `rust`   |                             | `rust-version`   | Six newest, then `stable`   | `Cargo.toml` (`package.rust-version`), `rust-toolchain.toml` (`toolchain.channel`)       |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -74,6 +75,21 @@ and newer. Each line of the JSON report names its newest release, the
 `checksum_url` of that release's SHA-256 checksum, and under
 `compatibility.java` the newest Java line it runs on, from
 [Gradle's compatibility matrix](https://docs.gradle.org/current/userguide/compatibility.html).
+
+Rust lines are minor releases such as `1.94`. Upstream supports the
+newest stable release and no other, so the matrix holds the six newest
+lines, the older five end of life without warnings, and then the label
+`stable` for a job on whatever stable is when it runs. `latest` and
+`supported_versions` hold numeric lines alone. A line is installable up
+to the release `static.rust-lang.org` serves on its stable channel,
+which also names each line's newest release in the JSON report.
+`package.rust-version` in `Cargo.toml` and `toolchain.channel` in
+`rust-toolchain.toml` name the oldest release, such as `1.80` or
+`1.80.1`, which the matrix holds as a floor; a channel name such as
+`stable` or `nightly-2026-01-01` is not a version, so the action
+warns and tries the next file. A workspace member's
+`rust-version.workspace = true` reads `workspace.package.rust-version`
+from the same `Cargo.toml`.
 
 ## Usage Example
 
@@ -158,7 +174,7 @@ Pin the action and any other action to a commit SHA in real workflows.
 
 | Name                | Required | Default  | Description                                                                                                       |
 | ------------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node`, `java`, `maven` or `gradle`                             |
+| tool                | True     |          | Catalog tool id or alias, such as `python`, `go`, `node`, `java`, `maven`, `gradle` or `rust`                     |
 | mode                | False    | `matrix` | `matrix`, `check` or `list` (the release lines of `tool`); any other value fails                                  |
 | version             | False    |          | Version to check; required in `check` mode and rejected in the others                                             |
 | constraint          | False    |          | Constraint applied to the matrix; wins over `path_prefix`; in `matrix` mode                                       |
@@ -179,6 +195,9 @@ Pin the action and any other action to a commit SHA in real workflows.
 `eol_behaviour` and `include_prerelease` default to empty on purpose: a
 non-empty default would override the catalog and any organisation
 overlay without a word.
+`eol_behaviour` skips a tool whose catalog entry allows end-of-life
+lines, as Rust's does, unless the overlay sets that tool's
+`eol_behaviour`.
 
 ## Outputs
 

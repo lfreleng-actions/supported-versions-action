@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "generated_at": "2026-11-05T23:38:03Z",
+  "generated_at": "2026-11-06T01:16:33Z",
   "endoflife": {
     "apache-maven": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "releases": [
         {
           "line": "3.0",
@@ -87,7 +87,7 @@
       ]
     },
     "eclipse-temurin": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:31Z",
       "releases": [
         {
           "line": "8",
@@ -218,7 +218,7 @@
       ]
     },
     "go": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:31Z",
       "releases": [
         {
           "line": "1.10",
@@ -383,7 +383,7 @@
       ]
     },
     "gradle": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:31Z",
       "releases": [
         {
           "line": "1",
@@ -484,7 +484,7 @@
       ]
     },
     "nodejs": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "releases": [
         {
           "line": "1",
@@ -775,7 +775,7 @@
       ]
     },
     "python": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "releases": [
         {
           "line": "2.6",
@@ -968,11 +968,654 @@
           "latest_date": "2026-10-25"
         }
       ]
+    },
+    "rust": {
+      "fetched_at": "2026-11-06T01:16:32Z",
+      "releases": [
+        {
+          "line": "1.29",
+          "released": "2018-09-13",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2018-10-26",
+          "latest": "1.29.2",
+          "latest_date": "2018-10-12"
+        },
+        {
+          "line": "1.30",
+          "released": "2018-10-25",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2018-12-07",
+          "latest": "1.30.1",
+          "latest_date": "2018-11-08"
+        },
+        {
+          "line": "1.31",
+          "released": "2018-12-06",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-01-18",
+          "latest": "1.31.1",
+          "latest_date": "2018-12-20"
+        },
+        {
+          "line": "1.32",
+          "released": "2019-01-17",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-03-01",
+          "latest": "1.32.0",
+          "latest_date": "2019-01-17"
+        },
+        {
+          "line": "1.33",
+          "released": "2019-02-28",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-04-12",
+          "latest": "1.33.0",
+          "latest_date": "2019-02-28"
+        },
+        {
+          "line": "1.34",
+          "released": "2019-04-11",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-05-24",
+          "latest": "1.34.2",
+          "latest_date": "2019-05-14"
+        },
+        {
+          "line": "1.35",
+          "released": "2019-05-23",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-07-04",
+          "latest": "1.35.0",
+          "latest_date": "2019-05-23"
+        },
+        {
+          "line": "1.36",
+          "released": "2019-07-04",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-08-16",
+          "latest": "1.36.0",
+          "latest_date": "2019-07-04"
+        },
+        {
+          "line": "1.37",
+          "released": "2019-08-15",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-09-27",
+          "latest": "1.37.0",
+          "latest_date": "2019-08-15"
+        },
+        {
+          "line": "1.38",
+          "released": "2019-09-26",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-11-08",
+          "latest": "1.38.0",
+          "latest_date": "2019-09-26"
+        },
+        {
+          "line": "1.39",
+          "released": "2019-11-07",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2019-12-20",
+          "latest": "1.39.0",
+          "latest_date": "2019-11-07"
+        },
+        {
+          "line": "1.40",
+          "released": "2019-12-19",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-01-31",
+          "latest": "1.40.0",
+          "latest_date": "2019-12-19"
+        },
+        {
+          "line": "1.41",
+          "released": "2020-01-30",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-03-13",
+          "latest": "1.41.1",
+          "latest_date": "2020-02-27"
+        },
+        {
+          "line": "1.42",
+          "released": "2020-03-12",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-04-24",
+          "latest": "1.42.0",
+          "latest_date": "2020-03-12"
+        },
+        {
+          "line": "1.43",
+          "released": "2020-04-23",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-06-05",
+          "latest": "1.43.1",
+          "latest_date": "2020-05-07"
+        },
+        {
+          "line": "1.44",
+          "released": "2020-06-04",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-07-17",
+          "latest": "1.44.1",
+          "latest_date": "2020-06-18"
+        },
+        {
+          "line": "1.45",
+          "released": "2020-07-16",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-08-28",
+          "latest": "1.45.2",
+          "latest_date": "2020-08-03"
+        },
+        {
+          "line": "1.46",
+          "released": "2020-08-27",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-10-08",
+          "latest": "1.46.0",
+          "latest_date": "2020-08-27"
+        },
+        {
+          "line": "1.47",
+          "released": "2020-10-08",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2020-11-20",
+          "latest": "1.47.0",
+          "latest_date": "2020-10-08"
+        },
+        {
+          "line": "1.48",
+          "released": "2020-11-19",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-01-01",
+          "latest": "1.48.0",
+          "latest_date": "2020-11-19"
+        },
+        {
+          "line": "1.49",
+          "released": "2020-12-31",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-02-12",
+          "latest": "1.49.0",
+          "latest_date": "2020-12-31"
+        },
+        {
+          "line": "1.50",
+          "released": "2021-02-11",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-03-26",
+          "latest": "1.50.0",
+          "latest_date": "2021-02-11"
+        },
+        {
+          "line": "1.51",
+          "released": "2021-03-25",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-05-07",
+          "latest": "1.51.0",
+          "latest_date": "2021-03-25"
+        },
+        {
+          "line": "1.52",
+          "released": "2021-05-06",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-06-18",
+          "latest": "1.52.1",
+          "latest_date": "2021-05-10"
+        },
+        {
+          "line": "1.53",
+          "released": "2021-06-17",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-07-30",
+          "latest": "1.53.0",
+          "latest_date": "2021-06-17"
+        },
+        {
+          "line": "1.54",
+          "released": "2021-07-29",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-09-10",
+          "latest": "1.54.0",
+          "latest_date": "2021-07-29"
+        },
+        {
+          "line": "1.55",
+          "released": "2021-09-09",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-10-22",
+          "latest": "1.55.0",
+          "latest_date": "2021-09-09"
+        },
+        {
+          "line": "1.56",
+          "released": "2021-10-21",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2021-12-03",
+          "latest": "1.56.1",
+          "latest_date": "2021-11-01"
+        },
+        {
+          "line": "1.57",
+          "released": "2021-12-02",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-01-14",
+          "latest": "1.57.0",
+          "latest_date": "2021-12-02"
+        },
+        {
+          "line": "1.58",
+          "released": "2022-01-13",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-02-25",
+          "latest": "1.58.1",
+          "latest_date": "2022-01-20"
+        },
+        {
+          "line": "1.59",
+          "released": "2022-02-24",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-04-08",
+          "latest": "1.59.0",
+          "latest_date": "2022-02-24"
+        },
+        {
+          "line": "1.60",
+          "released": "2022-04-07",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-05-20",
+          "latest": "1.60.0",
+          "latest_date": "2022-04-07"
+        },
+        {
+          "line": "1.61",
+          "released": "2022-05-19",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-07-01",
+          "latest": "1.61.0",
+          "latest_date": "2022-05-19"
+        },
+        {
+          "line": "1.62",
+          "released": "2022-06-30",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-09-12",
+          "latest": "1.62.1",
+          "latest_date": "2022-07-19"
+        },
+        {
+          "line": "1.63",
+          "released": "2022-08-11",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-09-23",
+          "latest": "1.63.0",
+          "latest_date": "2022-08-11"
+        },
+        {
+          "line": "1.64",
+          "released": "2022-09-22",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-11-04",
+          "latest": "1.64.0",
+          "latest_date": "2022-09-22"
+        },
+        {
+          "line": "1.65",
+          "released": "2022-11-03",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2022-12-16",
+          "latest": "1.65.0",
+          "latest_date": "2022-11-03"
+        },
+        {
+          "line": "1.66",
+          "released": "2022-12-15",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-01-27",
+          "latest": "1.66.1",
+          "latest_date": "2023-01-10"
+        },
+        {
+          "line": "1.67",
+          "released": "2023-01-26",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-03-10",
+          "latest": "1.67.1",
+          "latest_date": "2023-02-09"
+        },
+        {
+          "line": "1.68",
+          "released": "2023-03-09",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-04-21",
+          "latest": "1.68.2",
+          "latest_date": "2023-03-28"
+        },
+        {
+          "line": "1.69",
+          "released": "2023-04-20",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-06-02",
+          "latest": "1.69.0",
+          "latest_date": "2023-04-20"
+        },
+        {
+          "line": "1.70",
+          "released": "2023-06-01",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-07-14",
+          "latest": "1.70.0",
+          "latest_date": "2023-06-01"
+        },
+        {
+          "line": "1.71",
+          "released": "2023-07-13",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-08-25",
+          "latest": "1.71.1",
+          "latest_date": "2023-08-03"
+        },
+        {
+          "line": "1.72",
+          "released": "2023-08-24",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-10-06",
+          "latest": "1.72.1",
+          "latest_date": "2023-09-19"
+        },
+        {
+          "line": "1.73",
+          "released": "2023-10-05",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-11-17",
+          "latest": "1.73.0",
+          "latest_date": "2023-10-05"
+        },
+        {
+          "line": "1.74",
+          "released": "2023-11-16",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2023-12-28",
+          "latest": "1.74.1",
+          "latest_date": "2023-12-07"
+        },
+        {
+          "line": "1.75",
+          "released": "2023-12-28",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-02-08",
+          "latest": "1.75.0",
+          "latest_date": "2023-12-28"
+        },
+        {
+          "line": "1.76",
+          "released": "2024-02-08",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-03-21",
+          "latest": "1.76.0",
+          "latest_date": "2024-02-08"
+        },
+        {
+          "line": "1.77",
+          "released": "2024-03-21",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-05-02",
+          "latest": "1.77.2",
+          "latest_date": "2024-04-09"
+        },
+        {
+          "line": "1.78",
+          "released": "2024-05-02",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-06-13",
+          "latest": "1.78.0",
+          "latest_date": "2024-05-02"
+        },
+        {
+          "line": "1.79",
+          "released": "2024-06-13",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-07-25",
+          "latest": "1.79.0",
+          "latest_date": "2024-06-13"
+        },
+        {
+          "line": "1.80",
+          "released": "2024-07-25",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-09-05",
+          "latest": "1.80.1",
+          "latest_date": "2024-08-08"
+        },
+        {
+          "line": "1.81",
+          "released": "2024-09-05",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-10-17",
+          "latest": "1.81.0",
+          "latest_date": "2024-09-05"
+        },
+        {
+          "line": "1.82",
+          "released": "2024-10-17",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2024-11-28",
+          "latest": "1.82.0",
+          "latest_date": "2024-10-17"
+        },
+        {
+          "line": "1.83",
+          "released": "2024-11-28",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-01-09",
+          "latest": "1.83.0",
+          "latest_date": "2024-11-28"
+        },
+        {
+          "line": "1.84",
+          "released": "2025-01-09",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-02-20",
+          "latest": "1.84.1",
+          "latest_date": "2025-01-30"
+        },
+        {
+          "line": "1.85",
+          "released": "2025-02-20",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-04-03",
+          "latest": "1.85.1",
+          "latest_date": "2025-03-18"
+        },
+        {
+          "line": "1.86",
+          "released": "2025-04-03",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-05-15",
+          "latest": "1.86.0",
+          "latest_date": "2025-04-03"
+        },
+        {
+          "line": "1.87",
+          "released": "2025-05-15",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-06-26",
+          "latest": "1.87.0",
+          "latest_date": "2025-05-15"
+        },
+        {
+          "line": "1.88",
+          "released": "2025-06-26",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-08-07",
+          "latest": "1.88.0",
+          "latest_date": "2025-06-26"
+        },
+        {
+          "line": "1.89",
+          "released": "2025-08-07",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-09-18",
+          "latest": "1.89.0",
+          "latest_date": "2025-08-07"
+        },
+        {
+          "line": "1.90",
+          "released": "2025-09-18",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-10-30",
+          "latest": "1.90.0",
+          "latest_date": "2025-09-18"
+        },
+        {
+          "line": "1.91",
+          "released": "2025-10-30",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2025-12-11",
+          "latest": "1.91.1",
+          "latest_date": "2025-11-10"
+        },
+        {
+          "line": "1.92",
+          "released": "2025-12-11",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-01-22",
+          "latest": "1.92.0",
+          "latest_date": "2025-12-11"
+        },
+        {
+          "line": "1.93",
+          "released": "2026-01-22",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-03-06",
+          "latest": "1.93.1",
+          "latest_date": "2026-02-12"
+        },
+        {
+          "line": "1.94",
+          "released": "2026-03-06",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-04-16",
+          "latest": "1.94.1",
+          "latest_date": "2026-03-26"
+        },
+        {
+          "line": "1.95",
+          "released": "2026-04-16",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-05-28",
+          "latest": "1.95.0",
+          "latest_date": "2026-04-16"
+        },
+        {
+          "line": "1.96",
+          "released": "2026-05-28",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-07-09",
+          "latest": "1.96.1",
+          "latest_date": "2026-06-30"
+        },
+        {
+          "line": "1.97",
+          "released": "2026-07-09",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-08-20",
+          "latest": "1.97.1",
+          "latest_date": "2026-07-16"
+        },
+        {
+          "line": "1.98",
+          "released": "2026-08-20",
+          "lts": false,
+          "is_eol": true,
+          "eol_from": "2026-10-01",
+          "latest": "1.98.1",
+          "latest_date": "2026-09-03"
+        },
+        {
+          "line": "1.99",
+          "released": "2026-10-01",
+          "lts": false,
+          "is_eol": false,
+          "latest": "1.99.1",
+          "latest_date": "2026-10-15"
+        }
+      ]
     }
   },
   "actions_manifest": {
     "actions/go-versions": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:31Z",
       "lines": {
         "1.10": {
           "newest_stable": "1.10.8"
@@ -1034,7 +1677,7 @@
       }
     },
     "actions/node-versions": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "lines": {
         "10": {
           "newest_stable": "10.24.1"
@@ -1075,7 +1718,7 @@
       }
     },
     "actions/python-versions": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "lines": {
         "3.0": {
           "newest_stable": "3.0.1"
@@ -1139,7 +1782,7 @@
     }
   },
   "adoptium": {
-    "fetched_at": "2026-11-05T23:38:03Z",
+    "fetched_at": "2026-11-06T01:16:32Z",
     "lines": [
       "8",
       "11",
@@ -1159,7 +1802,7 @@
   },
   "maven_metadata": {
     "org.apache.maven:apache-maven": {
-      "fetched_at": "2026-11-05T23:38:03Z",
+      "fetched_at": "2026-11-06T01:16:32Z",
       "lines": {
         "2.0": {
           "newest_stable": "2.0.11"
@@ -1209,7 +1852,7 @@
     }
   },
   "gradle_services": {
-    "fetched_at": "2026-11-05T23:38:03Z",
+    "fetched_at": "2026-11-06T01:16:31Z",
     "lines": {
       "0": {
         "newest_stable": "0.9.2",
@@ -1252,5 +1895,10 @@
         "checksum_url": "https://services.gradle.org/distributions/gradle-9.8.2-bin.zip.sha256"
       }
     }
+  },
+  "rust_channel": {
+    "fetched_at": "2026-11-06T01:16:33Z",
+    "version": "1.99.1",
+    "date": "2026-10-15"
   }
 }

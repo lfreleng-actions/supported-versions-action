@@ -18,10 +18,12 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 // Generate fetches every endoflife, actions-manifest, adoptium,
-// maven-metadata and gradle-services source of the catalog's tools, in
+// maven-metadata, gradle-services and rust-channel source of the
+// catalog's tools, in
 // cat.IDs() order, and returns their snapshot. Manifests, Maven
 // metadata and Gradle versions are reduced to lines under the version
 // scheme of the first tool naming them, and endoflife products keep
@@ -29,7 +31,7 @@ import (
 // source types are skipped. Any fetch error fails the whole generation,
 // so a partial snapshot is never returned. GeneratedAt is now(), or
 // time.Now when now is nil.
-func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, gradle *gradleservices.Client, now func() time.Time) (*Snapshot, error) {
+func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, gradle *gradleservices.Client, rust *rustchannel.Client, now func() time.Time) (*Snapshot, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -87,6 +89,15 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 					FetchedAt: stamp(res.FetchedAt),
 					Lines:     gradleservices.Lines(versions, tool.VersionScheme),
 				}
+			case TypeRustChannel:
+				if s.RustChannel != nil {
+					continue
+				}
+				stable, res, err := rust.Stable(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("snapshot: tool %s: %w", id, err)
+				}
+				s.RustChannel = &RustChannel{FetchedAt: stamp(res.FetchedAt), Version: stable.Version, Date: stable.Date}
 			case TypeMavenMetadata:
 				if _, done := s.MavenMetadata[src.Artifact]; done {
 					continue
@@ -120,15 +131,16 @@ func mavenLines(versions []string, scheme string) map[string]actionsmanifest.Lin
 }
 
 // Check reports, together, every way the snapshot and the catalog
-// disagree: an endoflife, actions-manifest, adoptium, maven-metadata or
-// gradle-services source of the catalog with no entry, an entry for a source the catalog no longer names,
-// and a line that is not valid under the version scheme of a tool
-// using the source.
+// disagree: an endoflife, actions-manifest, adoptium, maven-metadata,
+// gradle-services or rust-channel source of the catalog with no entry,
+// an entry for a source the catalog no longer names, and a line or
+// release that is not valid under the version scheme of a tool using
+// the source.
 func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	products := make(map[string][]string)
 	repos := make(map[string][]string)
 	artifacts := make(map[string][]string)
-	var adoptiumSchemes, gradleSchemes []string
+	var adoptiumSchemes, gradleSchemes, rustSchemes []string
 	for _, id := range cat.IDs() {
 		tool := cat.Tools[id]
 		for _, src := range tool.Sources {
@@ -141,6 +153,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 				adoptiumSchemes = append(adoptiumSchemes, tool.VersionScheme)
 			case TypeGradleServices:
 				gradleSchemes = append(gradleSchemes, tool.VersionScheme)
+			case TypeRustChannel:
+				rustSchemes = append(rustSchemes, tool.VersionScheme)
 			case TypeMavenMetadata:
 				artifacts[src.Artifact] = append(artifacts[src.Artifact], tool.VersionScheme)
 			}
@@ -159,32 +173,61 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	}
 	errs = checkManifests(errs, "actions-manifest repository", repos, s.ActionsManifest)
 	errs = checkManifests(errs, "maven-metadata artifact", artifacts, s.MavenMetadata)
-	switch {
-	case adoptiumSchemes != nil && s.Adoptium == nil:
-		errs = append(errs, errors.New("snapshot: adoptium releases are missing"))
-	case adoptiumSchemes == nil && s.Adoptium != nil:
-		errs = append(errs, errors.New("snapshot: adoptium releases are not in the catalog"))
-	case s.Adoptium != nil:
-		for _, line := range s.Adoptium.Lines {
-			errs = appendInvalidLine(errs, "adoptium", line, adoptiumSchemes)
-		}
+	var adoptiumLines, gradleLines []string
+	if s.Adoptium != nil {
+		adoptiumLines = s.Adoptium.Lines
 	}
-	switch {
-	case gradleSchemes != nil && s.GradleServices == nil:
-		errs = append(errs, errors.New("snapshot: gradle-services versions are missing"))
-	case gradleSchemes == nil && s.GradleServices != nil:
-		errs = append(errs, errors.New("snapshot: gradle-services versions are not in the catalog"))
-	case s.GradleServices != nil:
-		for _, line := range slices.SortedFunc(maps.Keys(s.GradleServices.Lines), release.CompareLines) {
-			errs = appendInvalidLine(errs, "gradle-services", line, gradleSchemes)
-		}
+	if s.GradleServices != nil {
+		gradleLines = slices.SortedFunc(maps.Keys(s.GradleServices.Lines), release.CompareLines)
 	}
+	errs = checkEntry(errs, "adoptium", "adoptium releases", adoptiumSchemes, s.Adoptium != nil, adoptiumLines)
+	errs = checkEntry(errs, "gradle-services", "gradle-services versions", gradleSchemes, s.GradleServices != nil, gradleLines)
+	errs = s.checkRustChannel(errs, rustSchemes)
 	for _, name := range slices.Sorted(maps.Keys(s.EndOfLife)) {
 		if _, ok := products[name]; !ok {
 			errs = append(errs, fmt.Errorf("snapshot: endoflife product %q is not in the catalog", name))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// checkEntry appends an error when the catalog names a source, kind,
+// that has schemes and the snapshot has no entry for it, or the
+// reverse, and an error for each line of the entry that is not valid
+// under those schemes. what names the entry, such as "adoptium
+// releases".
+func checkEntry(errs []error, kind, what string, schemes []string, present bool, lines []string) []error {
+	switch {
+	case schemes != nil && !present:
+		return append(errs, fmt.Errorf("snapshot: %s are missing", what))
+	case schemes == nil && present:
+		return append(errs, fmt.Errorf("snapshot: %s are not in the catalog", what))
+	}
+	for _, line := range lines {
+		errs = appendInvalidLine(errs, kind, line, schemes)
+	}
+	return errs
+}
+
+// checkRustChannel appends an error when the catalog names a
+// rust-channel source and the snapshot has no entry for it, or the
+// reverse, and an error when the entry's release is not a stable
+// release under the schemes of the tools using it.
+func (s *Snapshot) checkRustChannel(errs []error, schemes []string) []error {
+	switch {
+	case schemes != nil && s.RustChannel == nil:
+		return append(errs, errors.New("snapshot: rust-channel release is missing"))
+	case schemes == nil && s.RustChannel != nil:
+		return append(errs, errors.New("snapshot: rust-channel release is not in the catalog"))
+	case s.RustChannel == nil:
+		return errs
+	}
+	for _, scheme := range slices.Compact(slices.Sorted(slices.Values(schemes))) {
+		if v, err := release.Parse(scheme, s.RustChannel.Version); err != nil || v.Prerelease {
+			errs = append(errs, fmt.Errorf("snapshot: rust-channel: release %q is not a stable release under version scheme %q", s.RustChannel.Version, scheme))
+		}
+	}
+	return errs
 }
 
 // checkManifests appends an error for each name of want that have

@@ -16,6 +16,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 var (
@@ -41,7 +42,9 @@ type Options struct {
 	Overlay *catalog.Overlay
 	// Override replaces policy fields of every catalog tool; nil
 	// applies none. It is applied after Overlay, so a field set in both
-	// takes the Override value. It is validated as an overlay is.
+	// takes the Override value. Its EOLBehaviour skips a tool whose
+	// catalog entry allows end-of-life lines and whose EOLBehaviour
+	// Overlay does not set. It is validated as an overlay is.
 	Override *catalog.PolicyOverride
 	// OverlayOrigin names the overlay and any override for the report,
 	// for example a repository and commit.
@@ -68,6 +71,9 @@ type Options struct {
 	// GradleBaseURL overrides the Gradle services root. It exists for
 	// tests.
 	GradleBaseURL string
+	// RustBaseURL overrides the Rust distribution root. It exists for
+	// tests.
+	RustBaseURL string
 }
 
 // Resolver resolves matrices and checks versions. It is safe for
@@ -84,6 +90,7 @@ type Resolver struct {
 	adoptium      *adoptium.Client
 	maven         *mavenmeta.Client
 	gradle        *gradleservices.Client
+	rust          *rustchannel.Client
 }
 
 // New returns a Resolver configured by opts. It applies and so
@@ -125,6 +132,8 @@ func New(opts Options) (*Resolver, error) {
 	maven.BaseURL = opts.MavenBaseURL
 	gradle := gradleservices.New(f)
 	gradle.BaseURL = opts.GradleBaseURL
+	rust := rustchannel.New(f)
+	rust.BaseURL = opts.RustBaseURL
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
@@ -137,6 +146,7 @@ func New(opts Options) (*Resolver, error) {
 		adoptium:      releases,
 		maven:         maven,
 		gradle:        gradle,
+		rust:          rust,
 	}, nil
 }
 
@@ -147,7 +157,16 @@ const overrideSchema = 1
 // applyPolicy returns cat with opts.Overlay and then opts.Override
 // applied. The override reaches every tool through Catalog.Apply, so it
 // meets the overlay schema and the merged catalog is validated.
+//
+// The override's EOLBehaviour skips a tool whose catalog entry allows
+// end-of-life lines, as Rust's does for the lines its upstream no
+// longer supports, unless the overlay sets that tool's EOLBehaviour.
 func applyPolicy(cat *catalog.Catalog, opts Options) (*catalog.Catalog, error) {
+	keepEOL := map[string]bool{}
+	for id, tool := range cat.Tools {
+		keepEOL[id] = tool.Policy.EOLBehaviour == catalog.EOLAllow &&
+			(opts.Overlay == nil || opts.Overlay.Tools[id].Policy.EOLBehaviour == nil)
+	}
 	var err error
 	if opts.Overlay != nil {
 		if cat, err = cat.Apply(opts.Overlay); err != nil {
@@ -157,7 +176,11 @@ func applyPolicy(cat *catalog.Catalog, opts Options) (*catalog.Catalog, error) {
 	if opts.Override != nil {
 		o := &catalog.Overlay{Schema: overrideSchema, Tools: make(map[string]catalog.ToolOverlay, len(cat.Tools))}
 		for _, id := range cat.IDs() {
-			o.Tools[id] = catalog.ToolOverlay{Policy: *opts.Override}
+			p := *opts.Override
+			if keepEOL[id] {
+				p.EOLBehaviour = nil
+			}
+			o.Tools[id] = catalog.ToolOverlay{Policy: p}
 		}
 		if cat, err = cat.Apply(o); err != nil {
 			return nil, fmt.Errorf("versions: override: %w", err)

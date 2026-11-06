@@ -24,6 +24,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 const (
@@ -39,11 +40,13 @@ const (
 	deltaPath    = "/org/example/delta/maven-metadata.xml"
 	deltaID      = "org.example:delta"
 	gradlePath   = "/versions/all"
+	rustPath     = "/dist/channel-rust-stable.toml"
 )
 
 // twoTools is a catalog of two tools with their own endoflife products
 // and one shared versions manifest, a third reading Adoptium, a fourth
-// reading Maven Central metadata and a fifth reading Gradle services.
+// reading Maven Central metadata, a fifth reading Gradle services and
+// a sixth reading the Rust stable channel.
 const twoTools = `schema: 1
 tools:
   alpha:
@@ -84,6 +87,13 @@ tools:
     sources:
       - {type: gradle-services}
     policy: {rule: all, admit: installable}
+  zeta:
+    name: Zeta
+    version_scheme: major.minor
+    matrix_key: zeta-version
+    sources:
+      - {type: rust-channel}
+    policy: {rule: all, admit: installable}
 `
 
 var routes = map[string]string{
@@ -110,6 +120,7 @@ var routes = map[string]string{
 {"version":"3.0","checksumUrl":"https://example.test/3.0.sha256"},
 {"version":"2.9","checksumUrl":"https://example.test/2.9.sha256"},
 {"version":"3.1.0-20261105051641+0000","snapshot":true,"nightly":true}]`,
+	rustPath: "date = \"2026-10-15\"\n[pkg.rust]\nversion = \"1.99.1 (58cf8f9c3 2026-10-13)\"\n",
 }
 
 // fixedNow is the clock every generation test uses.
@@ -142,7 +153,7 @@ func newUpstream(t *testing.T, routes map[string]string) *upstream {
 	return u
 }
 
-func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client, *gradleservices.Client) {
+func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmanifest.Client, *adoptium.Client, *mavenmeta.Client, *gradleservices.Client, *rustchannel.Client) {
 	opts.Sleep = func(context.Context, time.Duration) error { return nil }
 	opts.Retries = -1
 	opts.Now = func() time.Time { return fixedNow }
@@ -157,7 +168,9 @@ func (u *upstream) clients(opts source.Options) (*endoflife.Client, *actionsmani
 	mm.BaseURL = u.srv.URL + "/"
 	g := gradleservices.New(f)
 	g.BaseURL = u.srv.URL + "/"
-	return eol, m, a, mm, g
+	r := rustchannel.New(f)
+	r.BaseURL = u.srv.URL + "/"
+	return eol, m, a, mm, g, r
 }
 
 func twoToolCatalog(t *testing.T) *catalog.Catalog {
@@ -174,8 +187,8 @@ func clock() time.Time { return fixedNow }
 func generate(t *testing.T, routes map[string]string) (*snapshot.Snapshot, *upstream) {
 	t.Helper()
 	u := newUpstream(t, routes)
-	eol, m, a, mm, g := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
+	eol, m, a, mm, g, r := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -253,6 +266,10 @@ func TestGenerate(t *testing.T) {
 	if !ok || !reflect.DeepEqual(gradleLines, wantGradle) {
 		t.Errorf("GradleLines() = %+v, %v; want %+v", gradleLines, ok, wantGradle)
 	}
+	version, date, fetchedAt, ok := s.RustStable()
+	if !ok || version != "1.99.1" || !date.Equal(*day("2026-10-15")) || !fetchedAt.Equal(stamp) {
+		t.Errorf("RustStable() = %q, %v, %v, %v; want 1.99.1 of 2026-10-15 fetched at %v", version, date, fetchedAt, ok, stamp)
+	}
 	if err := s.Check(twoToolCatalog(t)); err != nil {
 		t.Errorf("Check: %v", err)
 	}
@@ -282,14 +299,14 @@ func TestGenerateFailsOnAnyFetchError(t *testing.T) {
 		}
 	}
 	u := newUpstream(t, missing)
-	eol, m, a, mm, g := u.clients(source.Options{})
-	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
+	eol, m, a, mm, g, r := u.clients(source.Options{})
+	s, err := snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
 	if !errors.Is(err, source.ErrNotFound) || s != nil {
 		t.Errorf("Generate with a 404 = %v, %v; want ErrNotFound and no snapshot", s, err)
 	}
 
-	eol, m, a, mm, g = u.clients(source.Options{Offline: true})
-	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, clock)
+	eol, m, a, mm, g, r = u.clients(source.Options{Offline: true})
+	s, err = snapshot.Generate(t.Context(), twoToolCatalog(t), eol, m, a, mm, g, r, clock)
 	if !errors.Is(err, source.ErrNoData) || s != nil {
 		t.Errorf("Generate offline = %v, %v; want ErrNoData and no snapshot", s, err)
 	}

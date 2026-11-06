@@ -20,6 +20,7 @@ const (
 	java   = "java"
 	maven  = "maven"
 	gradle = "gradle"
+	rust   = "rust"
 )
 
 // demoPolicyCount is the path of the count the demo tools omit.
@@ -36,7 +37,7 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", gradle, java, maven, "nodejs", python}; !reflect.DeepEqual(got, want) {
+	if got, want := c.IDs(), []string{"go", gradle, java, maven, "nodejs", python, rust}; !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -79,7 +80,7 @@ func TestEmbedded(t *testing.T) {
 
 func TestLoadValid(t *testing.T) {
 	c := loadValid(t)
-	want := []string{gradle, "java", "legacy", maven, "node", python, "rust"}
+	want := []string{gradle, "java", "legacy", maven, "node", python, rust}
 	if got := c.IDs(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("IDs() = %v, want %v", got, want)
 	}
@@ -439,7 +440,7 @@ func TestApplyDoesNotMutate(t *testing.T) {
 	before := loadValid(t)
 	overlay := &catalog.Overlay{Schema: 1, Tools: map[string]catalog.ToolOverlay{
 		python: {Policy: catalog.PolicyOverride{Floor: ptr("3.12")}},
-		"rust": {Policy: catalog.PolicyOverride{Labels: []string{"beta"}}},
+		rust:   {Policy: catalog.PolicyOverride{Labels: []string{"beta"}}},
 	}}
 	got, err := base.Apply(overlay)
 	if err != nil {
@@ -453,7 +454,7 @@ func TestApplyDoesNotMutate(t *testing.T) {
 	got.Tools[maven].Compatibility["java"]["3.9"] = catalog.LineRange{Min: "11"}
 	got.Tools["legacy"].Sources[0].Lines[0].Line = "9.9"
 	got.Tools[python].Constraints.Detect[0].File = "changed"
-	got.Tools["rust"].Policy.Labels[0] = "changed"
+	got.Tools[rust].Policy.Labels[0] = "changed"
 	if !reflect.DeepEqual(base, before) {
 		t.Error("the result of Apply shares state with its receiver")
 	}

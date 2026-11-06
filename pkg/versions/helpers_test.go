@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,7 @@ const (
 	adoptiumPrefix = "/adoptium/"
 	mavenPrefix    = "/maven/"
 	gradlePrefix   = "/gradle/"
+	rustPrefix     = "/rust/"
 	pythonList     = "/eol/products/python/"
 	goList         = "/eol/products/go/"
 	pythonManifest = "/raw/actions/python-versions/main/versions-manifest.json"
@@ -43,7 +45,7 @@ const (
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
 // upstream serves endoflife.date, versions manifest, Adoptium, Maven
-// Central and Gradle services
+// Central, Gradle services and Rust stable channel
 // responses built from the embedded snapshot, and counts the requests
 // for each path.
 type upstream struct {
@@ -124,6 +126,9 @@ func newUpstream(t *testing.T) *upstream {
 	}
 	if lines, _, ok := snap.GradleLines(); ok {
 		u.bodies[gradlePrefix+"versions/all"] = gradleBody(t, lines)
+	}
+	if version, date, _, ok := snap.RustStable(); ok {
+		u.bodies[rustPrefix+"dist/channel-rust-stable.toml"] = rustBody(version, date)
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -267,6 +272,13 @@ func gradleBody(t *testing.T, lines map[string]gradleservices.Line) []byte {
 	return data
 }
 
+// rustBody is a Rust stable channel manifest serving version,
+// published on date.
+func rustBody(version string, date time.Time) []byte {
+	return fmt.Appendf(nil, "date = %q\n[pkg.rust]\nversion = \"%s (0123456789 %s)\"\n",
+		date.Format(time.DateOnly), version, date.Format(time.DateOnly))
+}
+
 func embeddedSnapshot(t *testing.T) *snapshot.Snapshot {
 	t.Helper()
 	s, err := snapshot.Embedded()
@@ -298,6 +310,7 @@ func newResolver(t *testing.T, u *upstream, edit func(*versions.Options)) *versi
 		AdoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
 		MavenBaseURL:     u.srv.URL + mavenPrefix,
 		GradleBaseURL:    u.srv.URL + gradlePrefix,
+		RustBaseURL:      u.srv.URL + rustPrefix,
 	}
 	opts.Fetch.Cache = c
 	opts.Fetch.Retries = -1

@@ -19,6 +19,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 // facts is what the sources of one tool supplied.
@@ -26,7 +27,7 @@ type facts struct {
 	// facts are the lifecycle facts of every endoflife source.
 	facts []release.Facts
 	// availability merges every actions-manifest, adoptium,
-	// maven-metadata and gradle-services source;
+	// maven-metadata, gradle-services and rust-channel source;
 	// nil when the tool has none or none could be supplied.
 	availability map[string]policy.Build
 	// checksums maps a line to the checksum a gradle-services source
@@ -51,18 +52,22 @@ type fetched struct {
 	entry        SourceEntry
 	facts        []release.Facts
 	availability map[string]policy.Build
-	// newest maps each line to the newest release a maven-metadata or
-	// gradle-services source publishes of it, and newer orders those
-	// releases in the source's version order.
+	// newest maps each line to the newest release a maven-metadata,
+	// gradle-services or rust-channel source publishes of it, and
+	// newer orders those releases in the source's version order.
 	newest    map[string]string
 	newer     func(v, than string) bool
 	checksums map[string]checksum
 	// withdrawn maps each line to what a gradle-services source lists
 	// of it, for the line's withdrawn releases.
 	withdrawn map[string]gradleservices.Line
-	warnings  []string
-	snapshot  bool
-	err       error
+	// stable is the release a rust-channel source serves and
+	// stableLine its line: every line up to it is installable.
+	stable     string
+	stableLine string
+	warnings   []string
+	snapshot   bool
+	err        error
 }
 
 // gather fetches the facts of every source of tool concurrently. When
@@ -106,7 +111,43 @@ func (r *Resolver) gather(ctx context.Context, tool catalog.Tool, line string) (
 		withdraw(out.facts, res.withdrawn)
 		raiseLatest(out.facts, res.newest, res.newer)
 	}
+	for _, res := range results {
+		if res.stableLine != "" {
+			installableUpTo(&out, res.stable, res.stableLine, line)
+		}
+	}
 	return out, nil
+}
+
+// installableUpTo makes every line of the facts up to stableLine
+// installable, with the line's Latest as its newest build, and
+// stableLine itself with stable when the facts do not list it yet. A
+// channel serves every release up to its current one, and none after
+// it. When line is not "", only that line is added.
+func installableUpTo(out *facts, stable, stableLine, line string) {
+	if out.availability == nil {
+		out.availability = make(map[string]policy.Build)
+	}
+	listed := false
+	for _, f := range out.facts {
+		if release.CompareLines(f.Line, stableLine) > 0 {
+			continue
+		}
+		latest := f.Latest
+		if release.CompareLines(f.Line, stableLine) == 0 {
+			listed = true
+			if latest == "" {
+				latest = stable
+			}
+		}
+		if latest == "" {
+			latest = f.Line
+		}
+		out.availability[f.Line] = policy.Build{Stable: latest}
+	}
+	if !listed && (line == "" || release.CompareLines(line, stableLine) == 0) {
+		out.availability[stableLine] = policy.Build{Stable: stable}
+	}
 }
 
 // withdraw replaces each line's Latest when a source marks that
@@ -159,6 +200,8 @@ func (r *Resolver) fetch(ctx context.Context, scheme string, src catalog.Source,
 		return r.fetchMavenMetadata(ctx, scheme, src.Artifact, line)
 	case snapshot.TypeGradleServices:
 		return r.fetchGradleServices(ctx, scheme, line)
+	case snapshot.TypeRustChannel:
+		return r.fetchRustChannel(ctx, scheme, line)
 	default:
 		return fetched{err: fmt.Errorf("%w %q", ErrUnsupportedSource, src.Type)}
 	}
@@ -402,4 +445,48 @@ func (r *Resolver) fetchGradleServices(ctx context.Context, scheme, line string)
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+// fetchRustChannel reads the release the Rust stable channel serves.
+// It is the newest release of its line, and every line up to its line
+// is installable; gather applies both once every source has answered.
+func (r *Resolver) fetchRustChannel(ctx context.Context, scheme, line string) fetched {
+	out := fetched{entry: SourceEntry{Type: snapshot.TypeRustChannel, Ref: rustchannel.Host}}
+	var version string
+	stable, res, err := r.rust.Stable(ctx)
+	switch {
+	case err == nil:
+		version = stable.Version
+		out.entry.Kind = Kind(res.Source)
+		out.entry.FetchedAt = timePtr(stamp(res.FetchedAt))
+		out.warnings = res.Warnings
+	case !errors.Is(err, source.ErrNoData):
+		out.err = err
+		return out
+	default:
+		var (
+			fetchedAt time.Time
+			found     bool
+		)
+		version, _, fetchedAt, found = r.snapshot.RustStable()
+		if !found {
+			out.entry.Kind = KindUnavailable
+			return out
+		}
+		out.entry.Kind = KindSnapshot
+		out.entry.FetchedAt = timePtr(stamp(fetchedAt))
+		out.snapshot = true
+	}
+	v, err := release.Parse(scheme, version)
+	if err != nil {
+		out.err = fmt.Errorf("rust-channel: %w", err)
+		return out
+	}
+	out.stable = version
+	out.stableLine = v.Line
+	out.newer = rustchannel.Newer
+	if line == "" || release.CompareLines(line, v.Line) == 0 {
+		out.newest = map[string]string{v.Line: version}
+	}
+	return out
 }

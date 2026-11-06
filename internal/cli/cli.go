@@ -82,6 +82,8 @@ type hooks struct {
 	mavenBaseURL string
 	// gradleBaseURL overrides the Gradle services root.
 	gradleBaseURL string
+	// rustBaseURL overrides the Rust distribution root.
+	rustBaseURL string
 	// now overrides the clock.
 	now func() time.Time
 	// snapshot overrides the embedded snapshot.
@@ -158,7 +160,7 @@ func (g *globals) register(fs *flag.FlagSet) {
 	fs.StringVar(&g.format, "format", g.format, "output `FORMAT`: text, json or github")
 	fs.StringVar(&g.policy, "policy", g.policy, "apply the policy overlay in local `FILE`")
 	fs.StringVar(&g.eolBehaviour, "eol-behaviour", g.eolBehaviour, //nolint:misspell // spelled as the catalog field
-		"override every tool's end-of-life behaviour with `VALUE`: warn, strip, fail or allow") //nolint:misspell // spelled as the catalog field
+		"override the end-of-life behaviour with `VALUE`: warn, strip, fail or allow; a tool whose catalog entry allows end-of-life lines keeps that unless --policy sets it") //nolint:misspell // spelled as the catalog field
 	fs.Var(&g.prerelease, "prerelease", "override every tool's policy to admit pre-release lines, or not with --prerelease=false")
 	fs.StringVar(&g.matrixKey, "matrix-key", g.matrixKey, "name the matrix `KEY` in place of the catalog's")
 	fs.BoolVar(&g.offline, "offline", g.offline, "never touch the network")

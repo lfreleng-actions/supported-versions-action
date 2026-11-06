@@ -632,6 +632,10 @@ tools:
   (`grace_days: 0`, `current: false`) overrides too. An overlay cannot
   add sources, change a version scheme or add a tool; those are catalog
   changes.
+- The `eol_behaviour` input overrides every tool except one whose
+  catalog entry sets `allow`, such as Rust, and whose overlay leaves
+  `eol_behaviour` unset: such a tool keeps its end-of-life lines by
+  design, and an overlay naming the tool can change that.
 - The reference must be a commit SHA for a live run, as the allow-list
   pattern requires; dry runs accept a branch.
 - The module checks the overlay against the same schema and fails

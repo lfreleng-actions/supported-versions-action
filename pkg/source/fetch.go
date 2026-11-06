@@ -224,6 +224,14 @@ func sleep(ctx context.Context, d time.Duration) error {
 // has gone. The fetch itself is bounded by Timeout and the retry
 // budget; running out of that budget counts as running out of retries.
 func (f *Fetcher) Get(ctx context.Context, url string) (Result, error) {
+	return f.GetMaxAge(ctx, url, 0)
+}
+
+// GetMaxAge is Get for a URL whose content changes slowly: a cached
+// entry is served without network while younger than the longer of
+// maxAge and Options.MaxAge. Concurrent Gets of one URL share the
+// fetch the first of them started, and with it that call's maxAge.
+func (f *Fetcher) GetMaxAge(ctx context.Context, url string, maxAge time.Duration) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -231,7 +239,7 @@ func (f *Fetcher) Get(ctx context.Context, url string) (Result, error) {
 	f.mu.Lock()
 	c, ok := f.inflight[key]
 	if !ok {
-		c = f.start(ctx, key, url)
+		c = f.start(ctx, key, url, max(maxAge, f.opts.MaxAge))
 	}
 	c.waiters++
 	f.mu.Unlock()
@@ -247,13 +255,13 @@ func (f *Fetcher) Get(ctx context.Context, url string) (Result, error) {
 // start launches the shared fetch for key and registers it as in
 // flight. The caller holds f.mu. The fetch keeps ctx's values but not
 // its cancellation or deadline, and runs for at most budget.
-func (f *Fetcher) start(ctx context.Context, key, url string) *call {
+func (f *Fetcher) start(ctx context.Context, key, url string, maxAge time.Duration) *call {
 	sctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), f.budget(), errBudget)
 	c := &call{done: make(chan struct{}), cancel: cancel}
 	f.inflight[key] = c
 	go func() {
 		defer cancel()
-		res, err := f.get(sctx, key, url)
+		res, err := f.get(sctx, key, url, maxAge)
 		f.mu.Lock()
 		if f.inflight[key] == c {
 			delete(f.inflight, key)
@@ -297,7 +305,7 @@ func (r Result) clone() Result {
 	return r
 }
 
-func (f *Fetcher) get(ctx context.Context, key, url string) (Result, error) {
+func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration) (Result, error) {
 	var (
 		entry cache.Entry
 		have  bool
@@ -308,7 +316,7 @@ func (f *Fetcher) get(ctx context.Context, key, url string) (Result, error) {
 	}
 	now := f.opts.Now()
 	age := now.Sub(entry.FetchedAt)
-	fresh := have && age >= 0 && age < f.opts.MaxAge
+	fresh := have && age >= 0 && age < maxAge
 	switch {
 	case fresh:
 		if err := f.fits(entry); err != nil {

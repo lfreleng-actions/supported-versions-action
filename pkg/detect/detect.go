@@ -210,7 +210,7 @@ func (p *project) apply(rule catalog.DetectRule, origin string, warnings *[]stri
 	case rule.Key != "":
 		return p.key(rule)
 	case rule.Field != "":
-		return p.field(rule, origin)
+		return p.field(rule, origin, warnings)
 	case rule.Classifiers != "":
 		return p.classifiers(rule, origin)
 	case rule.Regex != "":
@@ -310,11 +310,11 @@ func text(s string) *finding {
 	return &finding{text: s}
 }
 
-func (p *project) field(rule catalog.DetectRule, origin string) (*finding, error) {
+func (p *project) field(rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
 	name := strings.ToLower(rule.File)
 	switch {
 	case strings.HasSuffix(name, ".toml"):
-		return p.tomlField(rule, origin)
+		return p.tomlField(rule, origin, warnings)
 	case strings.HasSuffix(name, ".cfg"), strings.HasSuffix(name, ".ini"):
 		return p.iniField(rule, origin)
 	case strings.HasSuffix(name, ".json"):
@@ -324,7 +324,18 @@ func (p *project) field(rule catalog.DetectRule, origin string) (*finding, error
 	}
 }
 
-func (p *project) tomlField(rule catalog.DetectRule, origin string) (*finding, error) {
+// rustChannel matches a rustup channel name that names no release: a
+// release channel, optionally dated, and optionally a host triple.
+var rustChannel = regexp.MustCompile(`^(stable|beta|nightly)(-[0-9]{4}-[0-9]{2}-[0-9]{2})?(-.+)?$`)
+
+// tomlField reads a string at a dotted path of nested TOML tables.
+// Cargo's {workspace = true} under a package key reads the same key of
+// the file's [workspace.package] table instead; when the file has
+// none, it inherits from a workspace root this rule does not read, so
+// it yields nothing and adds a warning. A rust-toolchain.toml channel
+// naming a release channel, such as "stable" or "nightly-2026-10-01",
+// rather than a release also yields nothing and adds a warning.
+func (p *project) tomlField(rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
 	doc, err := p.parseTOML(rule.File)
 	if err != nil || doc == nil {
 		return nil, err
@@ -335,8 +346,15 @@ func (p *project) tomlField(rule catalog.DetectRule, origin string) (*finding, e
 	}
 	switch v := v.(type) {
 	case string:
+		if path.Base(rule.File) == "rust-toolchain.toml" && rustChannel.MatchString(strings.TrimSpace(v)) {
+			*warnings = append(*warnings, fmt.Sprintf("%s: ignoring %q: a release channel, not a version", origin, strings.TrimSpace(v)))
+			return nil, nil
+		}
 		return text(v), nil
 	case map[string]any:
+		if inherit, ok := v["workspace"].(bool); ok && inherit && strings.HasPrefix(rule.Field, "package.") {
+			return p.workspaceField(doc, rule, origin, warnings)
+		}
 		// Poetry's long form: a table carrying the constraint as
 		// its version.
 		if s, ok := v["version"].(string); ok {
@@ -346,6 +364,22 @@ func (p *project) tomlField(rule catalog.DetectRule, origin string) (*finding, e
 	default:
 		return nil, fmt.Errorf("%s: unsupported value of type %T", origin, v)
 	}
+}
+
+// workspaceField reads the [workspace.package] value a Cargo package
+// key inherits with {workspace = true}.
+func (p *project) workspaceField(doc map[string]any, rule catalog.DetectRule, origin string, warnings *[]string) (*finding, error) {
+	field := "workspace." + rule.Field
+	v, ok := lookup(doc, field)
+	if !ok {
+		*warnings = append(*warnings, fmt.Sprintf("%s: inherited from a workspace root %s does not define; trying later rules", origin, rule.File))
+		return nil, nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("%s:%s: unsupported value of type %T", rule.File, field, v)
+	}
+	return text(s), nil
 }
 
 // jsonField reads a string at a dotted path of nested JSON objects,

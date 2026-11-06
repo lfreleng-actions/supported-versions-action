@@ -170,6 +170,33 @@ func TestStaleEntryRevalidates(t *testing.T) {
 	}
 }
 
+func TestGetMaxAgeServesOlderEntry(t *testing.T) {
+	hs := newHarness(t, failHandler(t))
+	hs.seed(48*time.Hour, bodyV1)
+	res, err := hs.fetcher(Options{}).GetMaxAge(t.Context(), hs.url(), 72*time.Hour)
+	checkResult(t, res, err, OriginCache, bodyV1)
+	if hs.hits.Load() != 0 {
+		t.Errorf("requests = %d, want 0", hs.hits.Load())
+	}
+}
+
+func TestGetMaxAgeKeepsLongerMaxAge(t *testing.T) {
+	hs := newHarness(t, failHandler(t))
+	hs.seed(2*time.Hour, bodyV1)
+	res, err := hs.fetcher(Options{}).GetMaxAge(t.Context(), hs.url(), time.Hour)
+	checkResult(t, res, err, OriginCache, bodyV1)
+}
+
+func TestGetMaxAgeRevalidatesOlderEntry(t *testing.T) {
+	hs := newHarness(t, statusHandler(http.StatusNotModified))
+	hs.seed(73*time.Hour, bodyV1)
+	res, err := hs.fetcher(Options{}).GetMaxAge(t.Context(), hs.url(), 72*time.Hour)
+	checkResult(t, res, err, OriginLive, bodyV1)
+	if hs.hits.Load() != 1 {
+		t.Errorf("requests = %d, want 1", hs.hits.Load())
+	}
+}
+
 func TestOKStores(t *testing.T) {
 	hs := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("User-Agent"); got != UserAgent {
@@ -650,7 +677,7 @@ func testSharedContextEnding(t *testing.T, stage string, cause error, cached boo
 			return ctx.Err()
 		}
 	}
-	res, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), hs.url())
+	res, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), hs.url(), f.opts.MaxAge)
 	if hs.hits.Load() != 1 {
 		t.Errorf("requests = %d, want 1", hs.hits.Load())
 	}

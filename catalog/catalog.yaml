@@ -141,3 +141,27 @@ tools:
       java:
         "8": {max: "24"}
         "9": {max: "27"}
+
+  rust:
+    name: Rust
+    version_scheme: major.minor
+    matrix_key: rust-version
+    sources:
+      - {type: endoflife, product: rust}
+      # The release the stable channel serves: its line and every
+      # older one are installable.
+      - {type: rust-channel}
+    constraints:
+      syntax: semver-min
+      detect:
+        - {file: Cargo.toml, field: package.rust-version}
+        - {file: rust-toolchain.toml, field: toolchain.channel}
+    policy:
+      rule: latest
+      count: 6
+      # Appended to the matrix after the lines, for a job on whatever
+      # stable is when it runs.
+      labels: [stable]
+      # Upstream supports only the newest line, so the older five are
+      # end of life by design and stay in the matrix without warnings.
+      eol_behaviour: allow

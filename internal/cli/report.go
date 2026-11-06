@@ -117,6 +117,7 @@ func (e *env) resolve(g *globals, fn func(*versions.Resolver) (versions.Report, 
 		AdoptiumBaseURL:  e.hooks.adoptiumBaseURL,
 		MavenBaseURL:     e.hooks.mavenBaseURL,
 		GradleBaseURL:    e.hooks.gradleBaseURL,
+		RustBaseURL:      e.hooks.rustBaseURL,
 	}
 	if g.policy != "" {
 		if opts.Overlay, err = catalog.LoadOverlay(g.policy); err != nil {

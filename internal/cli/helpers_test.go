@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ const (
 	adoptiumPrefix = "/adoptium/"
 	mavenPrefix    = "/maven/"
 	gradlePrefix   = "/gradle/"
+	rustPrefix     = "/rust/"
 	reportURL      = "https://github.com/lfreleng-actions/supported-versions-action/catalog/schema/report.schema.json"
 )
 
@@ -38,7 +40,7 @@ const (
 var fixedNow = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
 // upstream serves endoflife.date, versions manifest, Adoptium, Maven
-// Central and Gradle services
+// Central, Gradle services and Rust stable channel
 // responses built from the embedded snapshot, as pkg/versions' tests do.
 type upstream struct {
 	t      *testing.T
@@ -116,6 +118,9 @@ func newUpstream(t *testing.T) *upstream {
 	}
 	if lines, _, ok := snap.GradleLines(); ok {
 		u.bodies[gradlePrefix+"versions/all"] = gradleBody(t, lines)
+	}
+	if version, date, _, ok := snap.RustStable(); ok {
+		u.bodies[rustPrefix+"dist/channel-rust-stable.toml"] = rustBody(version, date)
 	}
 	u.srv = httptest.NewServer(http.HandlerFunc(u.serve))
 	t.Cleanup(u.srv.Close)
@@ -226,6 +231,13 @@ func gradleBody(t *testing.T, lines map[string]gradleservices.Line) []byte {
 	return data
 }
 
+// rustBody is a Rust stable channel manifest serving version,
+// published on date.
+func rustBody(version string, date time.Time) []byte {
+	return fmt.Appendf(nil, "date = %q\n[pkg.rust]\nversion = \"%s (0123456789 %s)\"\n",
+		date.Format(time.DateOnly), version, date.Format(time.DateOnly))
+}
+
 func embeddedSnapshot(t *testing.T) *snapshot.Snapshot {
 	t.Helper()
 	s, err := snapshot.Embedded()
@@ -257,6 +269,7 @@ func newHarness(t *testing.T) *harness {
 			adoptiumBaseURL:  u.srv.URL + adoptiumPrefix,
 			mavenBaseURL:     u.srv.URL + mavenPrefix,
 			gradleBaseURL:    u.srv.URL + gradlePrefix,
+			rustBaseURL:      u.srv.URL + rustPrefix,
 			now:              func() time.Time { return fixedNow },
 			snapshot:         embeddedSnapshot(t),
 		},
