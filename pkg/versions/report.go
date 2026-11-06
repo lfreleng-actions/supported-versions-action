@@ -90,14 +90,24 @@ type SourceEntry struct {
 	// Type is the catalog source type, for example "endoflife".
 	Type string `json:"type"`
 	// Ref names the upstream: an endoflife product, a repository, a
-	// Maven group:artifact coordinate or, for adoptium,
-	// gradle-services and rust-channel, the API host.
+	// Maven group:artifact coordinate, StaticRef for a static source
+	// or, for adoptium, gradle-services and rust-channel, the API
+	// host.
 	Ref string `json:"ref"`
 	// Kind is where the facts came from.
 	Kind Kind `json:"kind"`
-	// FetchedAt is when the facts were fetched; nil when unavailable.
+	// FetchedAt is when the facts were fetched; nil when unavailable
+	// and for a static source.
 	FetchedAt *time.Time `json:"fetched_at,omitempty"`
+	// Catalog reports that the facts are held in the catalog, by a
+	// static source, rather than read from an upstream. Its Kind is
+	// KindLive: the catalog is always at hand.
+	Catalog bool `json:"catalog,omitempty"`
 }
+
+// StaticRef is the Ref of a static source, whose lines the catalog
+// holds.
+const StaticRef = "catalog"
 
 // PolicySummary echoes the effective policy, after any overlay.
 type PolicySummary struct {

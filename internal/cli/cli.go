@@ -84,6 +84,8 @@ type hooks struct {
 	gradleBaseURL string
 	// rustBaseURL overrides the Rust distribution root.
 	rustBaseURL string
+	// githubBaseURL overrides the GitHub API root.
+	githubBaseURL string
 	// now overrides the clock.
 	now func() time.Time
 	// snapshot overrides the embedded snapshot.

@@ -79,7 +79,11 @@
               "type": {"type": "string", "minLength": 1},
               "ref": {"type": "string", "minLength": 1},
               "kind": {"$ref": "#/$defs/kind"},
-              "fetched_at": {"$ref": "#/$defs/dateTime"}
+              "fetched_at": {"$ref": "#/$defs/dateTime"},
+              "catalog": {
+                "description": "The facts are held in the catalog by a static source, not read from an upstream.",
+                "type": "boolean"
+              }
             }
           }
         }
