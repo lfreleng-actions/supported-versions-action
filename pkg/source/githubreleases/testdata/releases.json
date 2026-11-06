@@ -1,0 +1,26 @@
+{
+  "data": {
+    "r0": {
+      "releases": {
+        "nodes": [
+          {"tagName": "v3.0.0", "isDraft": true, "isPrerelease": false, "publishedAt": null},
+          {"tagName": "v2.2.0-rc.1", "isDraft": false, "isPrerelease": true, "publishedAt": "2026-03-02T09:00:00Z"},
+          {"tagName": "nightly", "isDraft": false, "isPrerelease": true, "publishedAt": "2026-03-01T00:00:00Z"},
+          {"tagName": "v2.1.10", "isDraft": false, "isPrerelease": false, "publishedAt": "2026-02-20T12:00:00Z"},
+          {"tagName": "v2.0.4", "isDraft": false, "isPrerelease": false, "publishedAt": "2026-02-21T12:00:00Z"},
+          {"tagName": "v2.1.9", "isDraft": false, "isPrerelease": false, "publishedAt": "2026-02-01T12:00:00Z"},
+          {"tagName": "v2.1.0", "isDraft": false, "isPrerelease": false, "publishedAt": "2026-01-10T23:30:00Z"},
+          {"tagName": "v2.1.0-rc.1", "isDraft": false, "isPrerelease": true, "publishedAt": "2026-01-02T08:00:00Z"},
+          {"tagName": "v2.0.0", "isDraft": false, "isPrerelease": false, "publishedAt": "2025-10-05T10:00:00Z"}
+        ]
+      }
+    },
+    "r1": {
+      "releases": {
+        "nodes": [
+          {"tagName": "1.0.0", "isDraft": false, "isPrerelease": false, "publishedAt": "2025-06-01T00:00:00Z"}
+        ]
+      }
+    }
+  }
+}
