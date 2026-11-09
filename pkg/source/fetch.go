@@ -49,10 +49,15 @@ var (
 	// ErrNoData reports that neither the network nor the cache could
 	// supply a response.
 	ErrNoData = errors.New("no data available")
+	// ErrTransient marks a check's rejection of a 200 response as
+	// passing, such as a rate limit an API reports in its body: the
+	// Post retries it like a 429 and, when retries run out, falls back
+	// as for any other failure, to a cached entry or ErrNoData.
+	ErrTransient = errors.New("transient upstream failure")
 	// errRedirect reports a redirect the fetcher refused to follow.
 	errRedirect = errors.New("redirect to a different host refused")
-	// errBudget is the cause of a shared fetch's context ending because
-	// its time budget ran out, as opposed to every caller leaving.
+	// errBudget is the cause of a fetch's context ending because its
+	// time budget ran out, as opposed to its callers leaving.
 	errBudget = errors.New("fetch time budget spent")
 )
 
@@ -205,9 +210,10 @@ func sleep(ctx context.Context, d time.Duration) error {
 //  2. Otherwise the URL is requested, conditionally when an entry
 //     exists. A 200 is stored and served as OriginLive; a 304 renews
 //     the entry and serves it as OriginLive.
-//  3. Transport errors, 429 and 5xx are retried with exponential
-//     backoff and full jitter, honoring a Retry-After of up to 30
-//     seconds. Other 4xx are not retried.
+//  3. Transport errors, 429, 5xx and a 403 that signals a rate limit,
+//     by Retry-After or X-RateLimit-Remaining: 0, are retried with
+//     exponential backoff and full jitter, honoring a Retry-After of
+//     up to 30 seconds. Other 4xx are not retried.
 //  4. A 404 returns an error wrapping ErrNotFound; any other 4xx, or
 //     a body over MaxBody, returns an error. MaxBody applies to cached
 //     bodies too: one over it is an error wherever it would be served.
@@ -232,14 +238,35 @@ func (f *Fetcher) Get(ctx context.Context, url string) (Result, error) {
 // maxAge and Options.MaxAge. Concurrent Gets of one URL share the
 // fetch the first of them started, and with it that call's maxAge.
 func (f *Fetcher) GetMaxAge(ctx context.Context, url string, maxAge time.Duration) (Result, error) {
+	return f.do(ctx, request{method: http.MethodGet, url: url}, maxAge)
+}
+
+// Offline reports whether the fetcher never touches the network.
+func (f *Fetcher) Offline() bool {
+	return f.opts.Offline
+}
+
+// request is one upstream request.
+type request struct {
+	method string
+	url    string
+	body   []byte
+	header http.Header
+	check  func([]byte) error
+}
+
+// do runs req, a GET, through the cache and the in-flight calls,
+// serving a cached entry for up to the longer of maxAge and
+// Options.MaxAge.
+func (f *Fetcher) do(ctx context.Context, req request, maxAge time.Duration) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	key := cache.Key(http.MethodGet, url, nil)
+	key := cache.Key(req.method, req.url, req.body)
 	f.mu.Lock()
 	c, ok := f.inflight[key]
 	if !ok {
-		c = f.start(ctx, key, url, max(maxAge, f.opts.MaxAge))
+		c = f.start(ctx, key, req, max(maxAge, f.opts.MaxAge))
 	}
 	c.waiters++
 	f.mu.Unlock()
@@ -255,13 +282,13 @@ func (f *Fetcher) GetMaxAge(ctx context.Context, url string, maxAge time.Duratio
 // start launches the shared fetch for key and registers it as in
 // flight. The caller holds f.mu. The fetch keeps ctx's values but not
 // its cancellation or deadline, and runs for at most budget.
-func (f *Fetcher) start(ctx context.Context, key, url string, maxAge time.Duration) *call {
+func (f *Fetcher) start(ctx context.Context, key string, req request, maxAge time.Duration) *call {
 	sctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), f.budget(), errBudget)
 	c := &call{done: make(chan struct{}), cancel: cancel}
 	f.inflight[key] = c
 	go func() {
 		defer cancel()
-		res, err := f.get(sctx, key, url, maxAge)
+		res, err := f.get(sctx, key, req, maxAge)
 		f.mu.Lock()
 		if f.inflight[key] == c {
 			delete(f.inflight, key)
@@ -299,21 +326,26 @@ func (f *Fetcher) budget() time.Duration {
 	return d
 }
 
+// Budget returns ctx bounded by the time budget of one fetch, for an
+// operation of several requests that together count as one, such as
+// the pages of one paginated read. A Post under it that finds the
+// budget spent falls back as when its own budget runs out: to a cached
+// entry, or an error wrapping ErrNoData.
+func (f *Fetcher) Budget(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeoutCause(ctx, f.budget(), errBudget)
+}
+
 func (r Result) clone() Result {
 	r.Body = bytes.Clone(r.Body)
 	r.Warnings = append([]string(nil), r.Warnings...)
 	return r
 }
 
-func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration) (Result, error) {
-	var (
-		entry cache.Entry
-		have  bool
-	)
-	if f.opts.Cache != nil && !f.opts.Refresh {
-		entry, have = f.opts.Cache.Get(key)
-		have = have && entry.Method == http.MethodGet && entry.URL == url
-	}
+// get fetches req through the cache, with retries and the stale
+// fallback, within ctx.
+func (f *Fetcher) get(ctx context.Context, key string, req request, maxAge time.Duration) (Result, error) {
+	url := req.url
+	entry, have := f.cached(key, req)
 	now := f.opts.Now()
 	age := now.Sub(entry.FetchedAt)
 	fresh := have && age >= 0 && age < maxAge
@@ -332,8 +364,10 @@ func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration
 		return Result{}, fmt.Errorf("%s: %w: offline with no cached entry", url, ErrNoData)
 	}
 
+	// Only a GET revalidates: a server holding a matching ETag answers
+	// a conditional POST with 412, not 304 (RFC 9110, section 13.1.1).
 	var cond *cache.Entry
-	if have {
+	if have && req.method == http.MethodGet {
 		cond = &entry
 	}
 	var lastErr error
@@ -347,7 +381,7 @@ func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration
 				break
 			}
 		}
-		res, err := f.attempt(ctx, key, url, cond)
+		res, err := f.attempt(ctx, key, req, cond)
 		if err == nil {
 			return res, nil
 		}
@@ -373,8 +407,8 @@ func (f *Fetcher) get(ctx context.Context, key, url string, maxAge time.Duration
 	return Result{}, fmt.Errorf("%s: %w: %w", url, ErrNoData, lastErr)
 }
 
-// spent reports whether ctx, a shared fetch's context, ended because
-// its time budget ran out rather than because every caller left.
+// spent reports whether ctx, a fetch's context, ended because its
+// time budget ran out rather than because its callers left.
 func spent(ctx context.Context) bool {
 	return errors.Is(context.Cause(ctx), errBudget)
 }
@@ -421,12 +455,22 @@ func (f *Fetcher) delay(attempt int, lastErr error) time.Duration {
 }
 
 // attempt makes one request. Errors worth retrying are *retryable.
-func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entry) (Result, error) {
+func (f *Fetcher) attempt(ctx context.Context, key string, r request, cond *cache.Entry) (Result, error) {
+	url := r.url
 	ctx, cancel := context.WithTimeout(ctx, f.opts.Timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	var body io.Reader
+	if r.body != nil {
+		body = bytes.NewReader(r.body)
+	}
+	req, err := http.NewRequestWithContext(ctx, r.method, url, body)
 	if err != nil {
 		return Result{}, fmt.Errorf("%s: %w", url, err)
+	}
+	for name, values := range r.header {
+		for _, v := range values {
+			req.Header.Add(name, v)
+		}
 	}
 	req.Header.Set("User-Agent", UserAgent)
 	if cond != nil {
@@ -452,8 +496,20 @@ func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entr
 		if err != nil {
 			return Result{}, fmt.Errorf("%s: %w", url, err)
 		}
+		if r.check != nil {
+			if err = r.check(body); err != nil {
+				err = fmt.Errorf("%s: %w", url, err)
+				if errors.Is(err, ErrTransient) {
+					return Result{}, &retryable{
+						err:        err,
+						retryAfter: retryAfter(resp.Header.Get("Retry-After"), f.opts.Now()),
+					}
+				}
+				return Result{}, err
+			}
+		}
 		e := cache.Entry{
-			Method:       http.MethodGet,
+			Method:       r.method,
 			URL:          url,
 			Status:       resp.StatusCode,
 			ETag:         resp.Header.Get("ETag"),
@@ -471,7 +527,7 @@ func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entr
 		return f.store(key, e), nil
 	case resp.StatusCode == http.StatusNotFound:
 		return Result{}, fmt.Errorf("%s: %w", url, ErrNotFound)
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
+	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 || rateLimited(resp):
 		return Result{}, &retryable{
 			err:        fmt.Errorf("%s: HTTP %s", url, resp.Status),
 			retryAfter: retryAfter(resp.Header.Get("Retry-After"), f.opts.Now()),
@@ -479,6 +535,15 @@ func (f *Fetcher) attempt(ctx context.Context, key, url string, cond *cache.Entr
 	default:
 		return Result{}, fmt.Errorf("%s: unexpected HTTP %s", url, resp.Status)
 	}
+}
+
+// rateLimited reports a 403 that refuses the request for a rate limit
+// rather than for its credential: one carrying Retry-After, as GitHub's
+// secondary rate limit does, or X-RateLimit-Remaining: 0, as its
+// primary one does.
+func rateLimited(resp *http.Response) bool {
+	return resp.StatusCode == http.StatusForbidden &&
+		(resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0")
 }
 
 // read returns the response body, or an error when it exceeds MaxBody.
