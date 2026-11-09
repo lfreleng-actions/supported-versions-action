@@ -102,7 +102,8 @@ func TestLoadValid(t *testing.T) {
 		t.Errorf("maven/java compatibility for 4.0 = %+v", r)
 	}
 	lines := c.Tools["legacy"].Sources[0].Lines
-	if lines[0].Released != "2020-01-15" || lines[1].Line != "1.10" || !lines[1].LTS {
+	if lines[0].Released != "2020-01-15" || lines[1].Line != "1.10" ||
+		lines[0].LTS != nil || lines[1].LTS == nil || !*lines[1].LTS {
 		t.Errorf("static lines = %+v", lines)
 	}
 }
@@ -453,6 +454,7 @@ func TestApplyDoesNotMutate(t *testing.T) {
 	// The result must not share mutable state with the input.
 	got.Tools[maven].Compatibility["java"]["3.9"] = catalog.LineRange{Min: "11"}
 	got.Tools["legacy"].Sources[0].Lines[0].Line = "9.9"
+	*got.Tools["legacy"].Sources[0].Lines[1].LTS = false
 	got.Tools[python].Constraints.Detect[0].File = "changed"
 	got.Tools[rust].Policy.Labels[0] = "changed"
 	if !reflect.DeepEqual(base, before) {

@@ -295,6 +295,44 @@ func TestNoRetryOnClientError(t *testing.T) {
 	}
 }
 
+func TestForbiddenRateLimitRetried(t *testing.T) {
+	// GitHub's secondary rate limit is a 403 with Retry-After, its
+	// primary one a 403 with X-RateLimit-Remaining: 0.
+	for name, header := range map[string][2]string{
+		"secondary": {"Retry-After", "3"},
+		"primary":   {"X-RateLimit-Remaining", "0"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hs := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set(header[0], header[1])
+				w.WriteHeader(http.StatusForbidden)
+			})
+			_, err := hs.fetcher(Options{}).Get(t.Context(), hs.url())
+			if !errors.Is(err, ErrNoData) || hs.hits.Load() != 3 {
+				t.Errorf("err = %v after %d requests, want ErrNoData after 3", err, hs.hits.Load())
+			}
+			hs.seed(7*time.Hour, bodyV1)
+			res, err := hs.fetcher(Options{}).Get(t.Context(), hs.url())
+			checkResult(t, res, err, OriginStale, bodyV1)
+			if hs.hits.Load() != 6 {
+				t.Errorf("requests = %d, want 3 more", hs.hits.Load())
+			}
+		})
+	}
+}
+
+func TestForbiddenNotRetried(t *testing.T) {
+	hs := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		w.WriteHeader(http.StatusForbidden)
+	})
+	hs.seed(7*time.Hour, bodyV1)
+	_, err := hs.fetcher(Options{}).Get(t.Context(), hs.url())
+	if err == nil || errors.Is(err, ErrNoData) || hs.hits.Load() != 1 {
+		t.Errorf("err = %v after %d requests, want a plain error after 1", err, hs.hits.Load())
+	}
+}
+
 func TestNotFound(t *testing.T) {
 	hs := newHarness(t, statusHandler(http.StatusNotFound))
 	hs.seed(7*time.Hour, bodyV1)
@@ -677,7 +715,7 @@ func testSharedContextEnding(t *testing.T, stage string, cause error, cached boo
 			return ctx.Err()
 		}
 	}
-	res, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), hs.url(), f.opts.MaxAge)
+	res, err := f.get(ctx, cache.Key(http.MethodGet, hs.url(), nil), request{method: http.MethodGet, url: hs.url()}, f.opts.MaxAge)
 	if hs.hits.Load() != 1 {
 		t.Errorf("requests = %d, want 1", hs.hits.Load())
 	}

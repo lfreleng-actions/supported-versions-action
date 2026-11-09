@@ -557,10 +557,15 @@ Optimisations, all verified against the live services on 2026-10-26:
   fetches the product's release list, as `matrix` does.
 - The module fetches the sources for one request concurrently (bounded
   to four), with an in-process `singleflight` so concurrent callers in a
-  Go tool share one fetch.
+  Go tool share one GET. A POST, the batched GraphQL query, is never
+  shared: each caller vets the response with its own check, so each
+  sends its own request, and the cache still serves the repeats.
 - Retries (default 2, exponential backoff with jitter) apply to
-  transport errors, 429 and 5xx, never to other 4xx. Default timeout 5
-  seconds per request, with a total budget per resolution.
+  transport errors, 429, 5xx and a 403 that signals a rate limit
+  (`Retry-After` or `X-RateLimit-Remaining: 0`, as GitHub sends), never
+  to other 4xx. Default timeout 5 seconds per request, with a total
+  budget per resolution; the pages of one paginated GraphQL read share
+  a single request's budget.
 - The module uses GraphQL where it batches and nowhere else: releases
   from a batch of GitHub repositories in one request. endoflife.date
   needs no token and no GraphQL.

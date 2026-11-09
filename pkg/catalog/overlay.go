@@ -167,7 +167,14 @@ func (t Tool) clone() Tool {
 	t.Aliases = slices.Clone(t.Aliases)
 	t.Sources = slices.Clone(t.Sources)
 	for i := range t.Sources {
-		t.Sources[i].Lines = slices.Clone(t.Sources[i].Lines)
+		lines := slices.Clone(t.Sources[i].Lines)
+		for j := range lines {
+			if lines[j].LTS != nil {
+				lts := *lines[j].LTS
+				lines[j].LTS = &lts
+			}
+		}
+		t.Sources[i].Lines = lines
 	}
 	if t.Constraints != nil {
 		cons := *t.Constraints

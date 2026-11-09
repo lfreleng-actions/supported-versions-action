@@ -213,6 +213,8 @@ runs:
         INCLUDE_PRERELEASE: ${{ inputs.include_prerelease }}
         MATRIX_KEY: ${{ inputs.matrix_key }}
         SUMMARY: ${{ inputs.summary }}
+        # Read only by github-releases sources.
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         # Run supported-versions
         set -uo pipefail
