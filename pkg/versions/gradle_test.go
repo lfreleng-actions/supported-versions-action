@@ -23,8 +23,8 @@ const (
 	gradleWrapper = "gradle/wrapper/gradle-wrapper.properties"
 	gradleSums    = "https://services.gradle.org/distributions/"
 	gradle8Newest = "8.14.6"
-	gradle9Newest = "9.8.2"
-	gradle9Older  = "9.8.1"
+	gradle9Newest = "9.9.0"
+	gradle9Older  = "9.8.2"
 )
 
 var gradleMatrix = strings.Fields("8 9")
@@ -121,7 +121,7 @@ func TestMatrixGradleChecksumMatchesNewest(t *testing.T) {
 	for name, tc := range map[string]struct {
 		listed, newest, checksum string
 	}{
-		"listing newer":  {"9.8.3", "9.8.3", gradleSums + "gradle-9.8.3-bin.zip.sha256"},
+		"listing newer":  {"9.9.1", "9.9.1", gradleSums + "gradle-9.9.1-bin.zip.sha256"},
 		"listing behind": {gradle9Older, gradle9Newest, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -152,8 +152,8 @@ func TestMatrixGradleWithdrawn(t *testing.T) {
 		newest, checksum string
 	}{
 		"replaced": {
-			gradleservices.Line{NewestStable: gradle9Older, ChecksumURL: gradleSums + "gradle-9.8.1-bin.zip.sha256", Broken: []string{gradle9Newest}},
-			gradle9Older, gradleSums + "gradle-9.8.1-bin.zip.sha256",
+			gradleservices.Line{NewestStable: gradle9Older, ChecksumURL: gradleSums + "gradle-" + gradle9Older + "-bin.zip.sha256", Broken: []string{gradle9Newest}},
+			gradle9Older, gradleSums + "gradle-" + gradle9Older + "-bin.zip.sha256",
 		},
 		"suppressed": {gradleservices.Line{Broken: []string{gradle9Newest}}, "", ""},
 	} {
