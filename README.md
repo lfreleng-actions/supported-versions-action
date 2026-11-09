@@ -91,6 +91,24 @@ warns and tries the next file. A workspace member's
 `rust-version.workspace = true` reads `workspace.package.rust-version`
 from the same `Cargo.toml`.
 
+### Release Sources Outside endoflife.date
+
+A catalog entry can also read a tool's lines from two further sources,
+for tools endoflife.date does not list:
+
+- `github-releases` reads the releases of one or more GitHub
+  repositories in a single GraphQL query, and groups them into lines
+  under the tool's version scheme, reading past the first 100 releases
+  of a repository up to 2,000. Each repository is a source in its own
+  right: where two sources list a line, the first in catalog order
+  supplies its dates, and the newest release of any repository is the
+  one the line offers. It needs a token in `GITHUB_TOKEN`;
+  the action passes the job's `github.token`, and without one the
+  command-line tool fails with an error naming the variable.
+- `static` holds the lines, with their release, end-of-life and LTS
+  facts, in the catalog itself, for tools with no feed. The JSON report
+  marks such a source with `"catalog": true`.
+
 ## Usage Example
 
 <!-- markdownlint-disable MD046 -->
@@ -234,6 +252,9 @@ lines, as Rust's does, unless the overlay sets that tool's
   version under `fail_on_unsupported`; `4` an end-of-life line under the
   `fail` end-of-life behaviour; `5` a constraint outside the policy
   matrix under `strict_constraint`.
+- The action passes the job's `github.token` to the tool as
+  `GITHUB_TOKEN`. No source but `github-releases` reads it, and the
+  default `contents: read` permission is enough.
 - The action sets its outputs even when the step fails, so a later step
   running under `if: always()` can still read them.
 
