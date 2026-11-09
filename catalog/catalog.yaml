@@ -165,3 +165,137 @@ tools:
       # Upstream supports only the newest line, so the older five are
       # end of life by design and stay in the matrix without warnings.
       eol_behaviour: allow
+
+  dotnet:
+    name: .NET
+    # endoflife.date names .NET 5 and later by major alone, such as 8
+    # and 10, which setup-dotnet accepts; the 1.x to 3.x lines are on
+    # another scheme and left out.
+    version_scheme: major
+    matrix_key: dotnet-version
+    sources:
+      # No source the module reads lists installable releases of this
+      # tool or the eight below, so a line enters the matrix once
+      # endoflife.date marks it released.
+      - {type: endoflife, product: dotnet}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  terraform:
+    name: Terraform
+    version_scheme: major.minor
+    matrix_key: terraform-version
+    sources:
+      - {type: endoflife, product: terraform}
+    constraints:
+      syntax: semver-min
+    policy:
+      # endoflife.date marks each line end of life once two newer lines
+      # are out, so rule all keeps the supported lines alone.
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  ruby:
+    name: Ruby
+    version_scheme: major.minor
+    matrix_key: ruby-version
+    sources:
+      - {type: endoflife, product: ruby}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  php:
+    name: PHP
+    version_scheme: major.minor
+    matrix_key: php-version
+    sources:
+      - {type: endoflife, product: php}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  elixir:
+    name: Elixir
+    version_scheme: major.minor
+    matrix_key: elixir-version
+    sources:
+      - {type: endoflife, product: elixir}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  ghc:
+    name: Haskell (GHC)
+    aliases: [haskell]
+    version_scheme: major.minor
+    matrix_key: ghc-version
+    sources:
+      - {type: endoflife, product: ghc}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  julia:
+    name: Julia
+    version_scheme: major.minor
+    matrix_key: julia-version
+    sources:
+      - {type: endoflife, product: julia}
+    constraints:
+      syntax: semver-min
+    policy:
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  scala:
+    name: Scala
+    version_scheme: major.minor
+    matrix_key: scala-version
+    sources:
+      - {type: endoflife, product: scala}
+    constraints:
+      syntax: semver-min
+    policy:
+      # endoflife.date marks no Scala 2 line end of life, so 2.10 to
+      # 2.13 stay in the matrix beside the supported Scala 3 lines. No
+      # floor: under rule all a floor keeps every end-of-life Scala 3
+      # line above it. A project's own minimum, passed as the
+      # constraint, drops the Scala 2 lines it does not build on.
+      rule: all
+      admit: released
+      eol_behaviour: warn
+
+  kubernetes:
+    name: Kubernetes
+    aliases: [k8s]
+    version_scheme: major.minor
+    matrix_key: kubernetes-version
+    sources:
+      - {type: endoflife, product: kubernetes}
+    constraints:
+      syntax: semver-min
+    policy:
+      # endoflife.date marks each minor end of life when upstream
+      # maintenance ends, so rule all keeps the three maintained lines.
+      rule: all
+      admit: released
+      eol_behaviour: warn

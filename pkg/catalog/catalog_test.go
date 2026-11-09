@@ -21,6 +21,8 @@ const (
 	maven  = "maven"
 	gradle = "gradle"
 	rust   = "rust"
+	ghc    = "ghc"
+	k8s    = "kubernetes"
 )
 
 // demoPolicyCount is the path of the count the demo tools omit.
@@ -37,7 +39,11 @@ func TestEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embedded: %v", err)
 	}
-	if got, want := c.IDs(), []string{"go", gradle, java, maven, "nodejs", python, rust}; !reflect.DeepEqual(got, want) {
+	want := []string{
+		"dotnet", "elixir", ghc, "go", gradle, java, "julia", k8s, maven, "nodejs", "php", python,
+		"ruby", rust, "scala", "terraform",
+	}
+	if got := c.IDs(); !reflect.DeepEqual(got, want) {
 		t.Errorf("IDs() = %v, want %v", got, want)
 	}
 	for name, want := range map[string]string{
@@ -52,6 +58,8 @@ func TestEmbedded(t *testing.T) {
 		"Temurin": java,
 		"openjdk": java,
 		"Gradle":  gradle,
+		"haskell": ghc,
+		"K8s":     k8s,
 	} {
 		id, tool, ok := c.Lookup(name)
 		if !ok || id != want || tool.Name == "" {
@@ -75,6 +83,26 @@ func TestEmbedded(t *testing.T) {
 	detect := c.Tools[python].Constraints.Detect
 	if len(detect) != 6 || detect[5].File != ".python-version" {
 		t.Errorf("python detect rules = %+v", detect)
+	}
+}
+
+// TestEmbeddedEndOfLifeOnly checks the tools endoflife.date alone
+// describes: they take the project's minimum as an explicit constraint
+// and enter the matrix on release.
+func TestEmbeddedEndOfLifeOnly(t *testing.T) {
+	c, err := catalog.Embedded()
+	if err != nil {
+		t.Fatalf("Embedded: %v", err)
+	}
+	for _, id := range []string{"dotnet", "terraform", "ruby", "php", "elixir", ghc, "julia", "scala", k8s} {
+		tool := c.Tools[id]
+		if tool.MatrixKey != id+"-version" || len(tool.Sources) != 1 || tool.Sources[0].Type != "endoflife" ||
+			tool.Sources[0].Product != id || tool.Constraints == nil ||
+			tool.Constraints.Syntax != "semver-min" || len(tool.Constraints.Detect) != 0 ||
+			tool.Policy.Rule != catalog.RuleAll || tool.Policy.Admit != catalog.AdmitReleased ||
+			tool.Policy.EOLBehaviour != catalog.EOLWarn || tool.Policy.Floor != "" {
+			t.Errorf("%s = %+v", id, tool)
+		}
 	}
 }
 

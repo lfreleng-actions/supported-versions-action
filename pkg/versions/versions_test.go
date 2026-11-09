@@ -230,8 +230,8 @@ func TestMatrixOfflineSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	validated(t, rep)
-	if rep.Source.Kind != versions.KindSnapshot || rep.Source.SnapshotDate != "2026-11-06" {
-		t.Errorf("source = %+v, want snapshot of 2026-11-06", rep.Source)
+	if rep.Source.Kind != versions.KindSnapshot || rep.Source.SnapshotDate != "2026-11-09" {
+		t.Errorf("source = %+v, want snapshot of 2026-11-09", rep.Source)
 	}
 	wantVersions(t, rep, "3.11", "3.12", "3.13", "3.14", "3.15")
 	if hasWarning(rep, "days old") {

@@ -23,15 +23,24 @@ output, annotation and job summary.
 
 <!-- markdownlint-disable MD013 -->
 
-| Tool                   | ID       | Aliases                     | Matrix key       | Lines in the matrix         | Constraint detected from                                                                 |
-| ---------------------- | -------- | --------------------------- | ---------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
-| Python                 | `python` | `cpython`, `python3`, `py`  | `python-version` | Supported from 3.11         | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version`                             |
-| Go                     | `go`     | `golang`                    | `go-version`     | Supported                   | `go.mod` (`go` and `toolchain` directives)                                               |
-| Node.js                | `nodejs` | `node`                      | `node-version`   | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                               |
-| Java (Eclipse Temurin) | `java`   | `jdk`, `temurin`, `openjdk` | `java-version`   | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`)              |
-| Apache Maven           | `maven`  | `mvn`                       | `maven-version`  | Supported, no pre-releases  | `.mvn/wrapper/maven-wrapper.properties` (`distributionUrl`), `pom.xml` (`prerequisites`) |
-| Gradle                 | `gradle` |                             | `gradle-version` | Supported                   | `gradle/wrapper/gradle-wrapper.properties` (`distributionUrl`)                           |
-| Rust                   | `rust`   |                             | `rust-version`   | Six newest, then `stable`   | `Cargo.toml` (`package.rust-version`), `rust-toolchain.toml` (`toolchain.channel`)       |
+| Tool                   | ID           | Aliases                     | Matrix key           | Lines in the matrix         | Constraint detected from                                                                 |
+| ---------------------- | ------------ | --------------------------- | -------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| Python                 | `python`     | `cpython`, `python3`, `py`  | `python-version`     | Supported from 3.11         | `pyproject.toml`, `setup.cfg`, `setup.py`, `.python-version`                             |
+| Go                     | `go`         | `golang`                    | `go-version`         | Supported                   | `go.mod` (`go` and `toolchain` directives)                                               |
+| Node.js                | `nodejs`     | `node`                      | `node-version`       | Supported LTS lines         | `package.json` (`engines.node`), `.nvmrc`, `.node-version`                               |
+| Java (Eclipse Temurin) | `java`       | `jdk`, `temurin`, `openjdk` | `java-version`       | Supported LTS lines from 17 | `pom.xml` (`maven.compiler.release`), `.java-version`, `.sdkmanrc` (`java`)              |
+| Apache Maven           | `maven`      | `mvn`                       | `maven-version`      | Supported, no pre-releases  | `.mvn/wrapper/maven-wrapper.properties` (`distributionUrl`), `pom.xml` (`prerequisites`) |
+| Gradle                 | `gradle`     |                             | `gradle-version`     | Supported                   | `gradle/wrapper/gradle-wrapper.properties` (`distributionUrl`)                           |
+| Rust                   | `rust`       |                             | `rust-version`       | Six newest, then `stable`   | `Cargo.toml` (`package.rust-version`), `rust-toolchain.toml` (`toolchain.channel`)       |
+| .NET                   | `dotnet`     |                             | `dotnet-version`     | Supported                   | None; pass `constraint`                                                                  |
+| Terraform              | `terraform`  |                             | `terraform-version`  | Supported                   | None; pass `constraint`                                                                  |
+| Ruby                   | `ruby`       |                             | `ruby-version`       | Supported                   | None; pass `constraint`                                                                  |
+| PHP                    | `php`        |                             | `php-version`        | Supported                   | None; pass `constraint`                                                                  |
+| Elixir                 | `elixir`     |                             | `elixir-version`     | Supported                   | None; pass `constraint`                                                                  |
+| Haskell (GHC)          | `ghc`        | `haskell`                   | `ghc-version`        | Supported                   | None; pass `constraint`                                                                  |
+| Julia                  | `julia`      |                             | `julia-version`      | Supported                   | None; pass `constraint`                                                                  |
+| Scala                  | `scala`      |                             | `scala-version`      | Supported, Scala 2 and 3    | None; pass `constraint`                                                                  |
+| Kubernetes             | `kubernetes` | `k8s`                       | `kubernetes-version` | Supported                   | None; pass `constraint`                                                                  |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -90,6 +99,18 @@ which also names each line's newest release in the JSON report.
 warns and tries the next file. A workspace member's
 `rust-version.workspace = true` reads `workspace.package.rust-version`
 from the same `Cargo.toml`.
+
+.NET, Terraform, Ruby, PHP, Elixir, Haskell (GHC), Julia, Scala and
+Kubernetes read endoflife.date alone, so a line enters the matrix on
+its release date, and the matrix holds every line upstream has not
+marked end of life. .NET lines are major releases such as `10`, as
+endoflife.date names them; the others are minor releases such as
+`3.4`. The action detects no constraint for these tools: pass the
+oldest release the project supports as `constraint`, a bare version
+such as `3.2` or `8.0`, and the matrix keeps that line and newer.
+endoflife.date marks no Scala 2 line end of life, so without a
+constraint the Scala matrix holds 2.10 to 2.13 beside the supported
+Scala 3 lines.
 
 ### Release Sources Outside endoflife.date
 

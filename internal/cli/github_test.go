@@ -161,8 +161,8 @@ func TestGitHubOfflineSource(t *testing.T) {
 	delete(h.vars, "RUNNER_TEMP")
 	h.run("--offline", "--no-cache", formatGitHubFlag, cmdMatrix, toolPython).want(t, ExitOK)
 	outs := parseOutputs(t, readFile(t, outPath))
-	if outs["versions_source"] != "snapshot:2026-11-06" {
-		t.Errorf("versions_source = %q, want snapshot:2026-11-06", outs["versions_source"])
+	if outs["versions_source"] != "snapshot:2026-11-09" {
+		t.Errorf("versions_source = %q, want snapshot:2026-11-09", outs["versions_source"])
 	}
 	if p, ok := outs["report_path"]; !ok || p != "" {
 		t.Errorf("report_path = %q (set %v), want empty without RUNNER_TEMP", p, ok)
