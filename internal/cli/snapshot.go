@@ -14,6 +14,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
@@ -58,7 +59,9 @@ func (e *env) snapshotCmd(ctx context.Context, g *globals, args []string) error 
 	gradle.BaseURL = e.hooks.gradleBaseURL
 	rust := rustchannel.New(fetcher)
 	rust.BaseURL = e.hooks.rustBaseURL
-	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, gradle, rust, e.hooks.now)
+	gh := githubreleases.New(fetcher, e.getenv(githubreleases.TokenEnv))
+	gh.BaseURL = e.hooks.githubBaseURL
+	s, err := snapshot.Generate(ctx, cat, eol, manifests, releases, maven, gradle, rust, gh, e.hooks.now)
 	if err != nil {
 		return err
 	}

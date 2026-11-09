@@ -13,6 +13,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/snapshot"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 )
 
@@ -47,6 +48,15 @@ func sample() *snapshot.Snapshot {
 			"4": {Broken: []string{"4.0"}},
 		}},
 		RustChannel: &snapshot.RustChannel{FetchedAt: at, Version: "1.99.1", Date: *day("2026-10-15")},
+		GitHubReleases: map[string]snapshot.GitHubRepo{
+			etaRepo: {FetchedAt: at, Lines: map[string]githubreleases.Line{
+				"0.13": {Released: day("2026-10-09"), NewestStable: "0.13.7", NewestStablePublished: stampAt("2026-11-03T02:45:04Z")},
+				"0.14": {NewestPrerelease: "0.14.0-rc.2", NewestPrereleasePublished: stampAt("2026-11-05T17:00:00Z")},
+			}},
+			thetaRepo: {FetchedAt: at, Lines: map[string]githubreleases.Line{
+				"4": {Released: day("2026-07-09"), NewestStable: helm431, NewestStablePublished: stampAt("2026-10-15T01:08:37Z")},
+			}},
+		},
 	}
 }
 
@@ -125,6 +135,20 @@ func TestParseRejects(t *testing.T) {
 			"rust_channel": {"fetched_at": "2026-10-28T21:30:00Z", "version": "", "date": "2026-10-15"}}`,
 		"rust field": head + `"endoflife": {}, "actions_manifest": {},
 			"rust_channel": {"fetched_at": "2026-10-28T21:30:00Z", "version": "1.99.1", "date": "2026-10-15", "x": 1}}`,
+		"github fetched_at": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "x", "lines": {}}}}`,
+		"github date": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"1.0": {"newest_stable": "1.0.0", "released": "x"}}}}}`,
+		"github empty line": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"": {"newest_stable": "1.0.0"}}}}}`,
+		"github no newest": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"1.0": {"released": "2026-01-01"}}}}}`,
+		"github published date": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"1.0": {"newest_stable": "1.0.0", "newest_stable_published": "2026-01-01"}}}}}`,
+		"github prerelease published": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"1.0": {"newest_prerelease": "1.0.0-rc.1", "newest_prerelease_published": "x"}}}}}`,
+		"github field": head + `"endoflife": {}, "actions_manifest": {},
+			"github_releases": {"owner/x": {"fetched_at": "2026-10-28T21:30:00Z", "lines": {"1.0": {"newest_stable": "1.0.0", "x": 1}}}}}`,
 		"trailing data": `{"schema": 1, "generated_at": "2026-10-28T21:30:00Z", "endoflife": {}, "actions_manifest": {}} {}`,
 	}
 	for name, data := range cases {
@@ -146,6 +170,8 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 	s.MavenMetadata[deltaID].Lines["2"] = actionsmanifest.Line{NewestStable: "2"}
 	s.GradleServices.Lines["3.1"] = gradleservices.Line{NewestStable: "3.1.0"}
 	s.RustChannel.Version = "1.100.0-beta.3"
+	s.GitHubReleases[thetaRepo].Lines["4.0"] = githubreleases.Line{NewestStable: helm431}
+	s.GitHubReleases["example-org/gone"] = snapshot.GitHubRepo{}
 	err := s.Check(twoToolCatalog(t))
 	if err == nil {
 		t.Fatal("Check passed")
@@ -159,6 +185,8 @@ func TestCheckReportsEveryProblem(t *testing.T) {
 		`maven-metadata artifact org.example:delta: line "2" is not valid`,
 		`gradle-services: line "3.1" is not valid under version scheme "major"`,
 		`rust-channel: release "1.100.0-beta.3" is not a stable release under version scheme "major.minor"`,
+		`github-releases repository helm/helm: line "4.0" is not valid under version scheme "major"`,
+		`github-releases repository "example-org/gone" is not in the catalog`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Check error lacks %q:\n%v", want, err)
@@ -286,6 +314,9 @@ func TestLookupsMissing(t *testing.T) {
 	if _, _, ok := s.MavenLines("org.example:nope"); ok {
 		t.Error("MavenLines found an absent artifact")
 	}
+	if _, _, ok := s.GitHubLines("owner/nope"); ok {
+		t.Error("GitHubLines found an absent repository")
+	}
 	s.Adoptium = nil
 	if _, _, ok := s.AdoptiumLines(); ok {
 		t.Error("AdoptiumLines found an absent entry")
@@ -314,5 +345,24 @@ func TestEmbeddedMatchesCatalog(t *testing.T) {
 	}
 	if err := s.Check(cat); err != nil {
 		t.Errorf("the embedded snapshot is stale; run go generate ./catalog:\n%v", err)
+	}
+}
+
+func TestCheckGitHubReleasesEntry(t *testing.T) {
+	s := sample()
+	s.GitHubReleases = nil
+	if err := s.Check(twoToolCatalog(t)); err == nil ||
+		!strings.Contains(err.Error(), `github-releases repository "astral-sh/uv" is missing`) {
+		t.Errorf("Check without GitHub releases = %v", err)
+	}
+	data, err := s.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "github_releases") {
+		t.Errorf("output names github_releases:\n%s", data)
+	}
+	if got, err := snapshot.Parse(data); err != nil || got.GitHubReleases != nil {
+		t.Errorf("Parse = %+v, %v; want no GitHub releases", got, err)
 	}
 }

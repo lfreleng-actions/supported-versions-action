@@ -14,6 +14,7 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
@@ -74,6 +75,13 @@ type Options struct {
 	// RustBaseURL overrides the Rust distribution root. It exists for
 	// tests.
 	RustBaseURL string
+	// GitHubBaseURL overrides the GitHub API root. It exists for
+	// tests.
+	GitHubBaseURL string
+	// GitHubToken authenticates the github-releases source, the only
+	// source that sends it. Without it, a tool with a github-releases
+	// source fails rather than call GitHub unauthenticated.
+	GitHubToken string
 }
 
 // Resolver resolves matrices and checks versions. It is safe for
@@ -91,6 +99,7 @@ type Resolver struct {
 	maven         *mavenmeta.Client
 	gradle        *gradleservices.Client
 	rust          *rustchannel.Client
+	github        *githubreleases.Client
 }
 
 // New returns a Resolver configured by opts. It applies and so
@@ -134,6 +143,8 @@ func New(opts Options) (*Resolver, error) {
 	gradle.BaseURL = opts.GradleBaseURL
 	rust := rustchannel.New(f)
 	rust.BaseURL = opts.RustBaseURL
+	github := githubreleases.New(f, opts.GitHubToken)
+	github.BaseURL = opts.GitHubBaseURL
 	return &Resolver{
 		catalog:       cat,
 		overlay:       opts.Overlay,
@@ -147,6 +158,7 @@ func New(opts Options) (*Resolver, error) {
 		maven:         maven,
 		gradle:        gradle,
 		rust:          rust,
+		github:        github,
 	}, nil
 }
 

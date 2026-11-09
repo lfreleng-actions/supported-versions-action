@@ -543,6 +543,12 @@ tools:
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The catalog schema admits only known source types, so an
+	// unknown one can reach the resolver only through a catalog built
+	// in code.
+	fixed := cat.Tools["fixed"]
+	fixed.Sources = []catalog.Source{{Type: "carrier-pigeon"}}
+	cat.Tools["fixed"] = fixed
 	r = newResolver(t, u, func(o *versions.Options) { o.Catalog = cat })
 	if _, err := r.Matrix(ctx, "fixed", versions.MatrixRequest{}); !errors.Is(err, versions.ErrUnsupportedSource) {
 		t.Errorf("err = %v, want ErrUnsupportedSource", err)

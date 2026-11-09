@@ -10,8 +10,9 @@
 // pre-release build of each line of each versions manifest and each
 // Maven Central artifact, the release lines Adoptium has builds of, and
 // the newest Gradle release of each line with its checksum URL and the
-// line's withdrawn releases, and the release the Rust stable channel
-// serves. It is small, and regenerating it produces
+// line's withdrawn releases, the release the Rust stable channel
+// serves, and the newest releases of each line of each GitHub
+// repository read through github-releases. It is small, and regenerating it produces
 // diffs a reviewer can read.
 package snapshot
 
@@ -28,6 +29,7 @@ import (
 	catalogdata "github.com/lfreleng-actions/supported-versions-action/catalog"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/release"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 )
 
@@ -56,13 +58,20 @@ const (
 	// TypeRustChannel is the catalog source type of the Rust stable
 	// channel manifest.
 	TypeRustChannel = "rust-channel"
+	// TypeGitHubReleases is the catalog source type of a GitHub
+	// repository's releases.
+	TypeGitHubReleases = githubreleases.Type
+	// TypeStatic is the catalog source type of lines the catalog
+	// holds. The snapshot has nothing to store for it.
+	TypeStatic = "static"
 )
 
 const day = 24 * time.Hour
 
 // Snapshot is the offline copy of the release facts of every
 // endoflife, actions-manifest, adoptium, maven-metadata,
-// gradle-services and rust-channel source in the catalog.
+// gradle-services, rust-channel and github-releases source in the
+// catalog.
 type Snapshot struct {
 	// Schema is the format version, always Schema.
 	Schema int
@@ -86,6 +95,18 @@ type Snapshot struct {
 	// RustChannel is the snapshot of the Rust stable channel, or nil
 	// when the catalog has no rust-channel source.
 	RustChannel *RustChannel
+	// GitHubReleases maps an owner/name repository to the lines of
+	// its GitHub releases.
+	GitHubReleases map[string]GitHubRepo
+}
+
+// GitHubRepo is the snapshot of one repository's GitHub releases.
+type GitHubRepo struct {
+	// FetchedAt is when the releases were fetched, in UTC, to the
+	// second.
+	FetchedAt time.Time
+	// Lines maps each release line to its first and newest releases.
+	Lines map[string]githubreleases.Line
 }
 
 // RustChannel is the snapshot of the release the Rust stable channel
@@ -177,6 +198,17 @@ func (s *Snapshot) MavenLines(artifact string) (lines map[string]actionsmanifest
 	return maps.Clone(m.Lines), m.FetchedAt, true
 }
 
+// GitHubLines returns the lines of the GitHub releases of repository
+// and when they were fetched. found is false when the snapshot has no
+// entry for repository.
+func (s *Snapshot) GitHubLines(repository string) (lines map[string]githubreleases.Line, fetchedAt time.Time, found bool) {
+	r, ok := s.GitHubReleases[repository]
+	if !ok {
+		return nil, time.Time{}, false
+	}
+	return maps.Clone(r.Lines), r.FetchedAt, true
+}
+
 // GradleLines returns the newest Gradle release of each line, with
 // the line's withdrawn releases, and when the versions were fetched.
 // found is false when the snapshot has no gradle-services entry.
@@ -234,6 +266,24 @@ type wireSnapshot struct {
 	MavenMetadata   map[string]wireManifest `json:"maven_metadata,omitempty"`
 	GradleServices  *wireGradleServices     `json:"gradle_services,omitempty"`
 	RustChannel     *wireRustChannel        `json:"rust_channel,omitempty"`
+	GitHubReleases  map[string]wireGitHub   `json:"github_releases,omitempty"`
+}
+
+type wireGitHub struct {
+	FetchedAt string                    `json:"fetched_at"`
+	Lines     map[string]wireGitHubLine `json:"lines"`
+}
+
+// wireGitHubLine is one line of a repository's GitHub releases.
+// Released is a day; the publication times are timestamps, so that a
+// tie between two releases of one version published on one day breaks
+// as it does on live data.
+type wireGitHubLine struct {
+	Released                  *string `json:"released,omitempty"`
+	NewestStable              string  `json:"newest_stable,omitempty"`
+	NewestStablePublished     *string `json:"newest_stable_published,omitempty"`
+	NewestPrerelease          string  `json:"newest_prerelease,omitempty"`
+	NewestPrereleasePublished *string `json:"newest_prerelease_published,omitempty"`
 }
 
 type wireRustChannel struct {
@@ -332,6 +382,22 @@ func (s *Snapshot) Marshal() ([]byte, error) {
 	if rc := s.RustChannel; rc != nil {
 		w.RustChannel = &wireRustChannel{FetchedAt: formatTime(rc.FetchedAt), Version: rc.Version, Date: rc.Date.UTC().Format(time.DateOnly)}
 	}
+	if len(s.GitHubReleases) > 0 {
+		w.GitHubReleases = make(map[string]wireGitHub, len(s.GitHubReleases))
+		for repo, r := range s.GitHubReleases {
+			wg := wireGitHub{FetchedAt: formatTime(r.FetchedAt), Lines: make(map[string]wireGitHubLine, len(r.Lines))}
+			for line, l := range r.Lines {
+				wg.Lines[line] = wireGitHubLine{
+					Released:                  formatDate(l.Released),
+					NewestStable:              l.NewestStable,
+					NewestStablePublished:     formatTimePtr(l.NewestStablePublished),
+					NewestPrerelease:          l.NewestPrerelease,
+					NewestPrereleasePublished: formatTimePtr(l.NewestPrereleasePublished),
+				}
+			}
+			w.GitHubReleases[repo] = wg
+		}
+	}
 	if s.Adoptium != nil {
 		w.Adoptium = &wireAdoptium{FetchedAt: formatTime(s.Adoptium.FetchedAt), Lines: sortedLines(s.Adoptium.Lines)}
 	}
@@ -427,10 +493,69 @@ func Parse(data []byte) (*Snapshot, error) {
 		}
 		s.RustChannel = rc
 	}
+	if s.GitHubReleases, err = gitHubFromWire(w.GitHubReleases); err != nil {
+		return nil, err
+	}
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// gitHubFromWire decodes the github_releases entries; nil when there
+// are none.
+func gitHubFromWire(w map[string]wireGitHub) (map[string]GitHubRepo, error) {
+	if len(w) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]GitHubRepo, len(w))
+	for repo, wg := range w {
+		r, err := wg.fromWire("github_releases." + repo)
+		if err != nil {
+			return nil, err
+		}
+		out[repo] = r
+	}
+	return out, nil
+}
+
+// fromWire decodes the repository's releases at the JSON path where.
+func (wg wireGitHub) fromWire(where string) (GitHubRepo, error) {
+	r := GitHubRepo{Lines: make(map[string]githubreleases.Line, len(wg.Lines))}
+	var err error
+	if r.FetchedAt, err = parseTime(where+".fetched_at", wg.FetchedAt); err != nil {
+		return GitHubRepo{}, err
+	}
+	for line, wl := range wg.Lines {
+		l := githubreleases.Line{NewestStable: wl.NewestStable, NewestPrerelease: wl.NewestPrerelease}
+		if wl.Released != nil {
+			t, perr := time.Parse(time.DateOnly, *wl.Released)
+			if perr != nil {
+				return GitHubRepo{}, fmt.Errorf("snapshot: %s: line %q: released %q is not a YYYY-MM-DD date", where, line, *wl.Released)
+			}
+			l.Released = &t
+		}
+		stamps := []struct {
+			field string
+			in    *string
+			out   **time.Time
+		}{
+			{"newest_stable_published", wl.NewestStablePublished, &l.NewestStablePublished},
+			{"newest_prerelease_published", wl.NewestPrereleasePublished, &l.NewestPrereleasePublished},
+		}
+		for _, d := range stamps {
+			if d.in == nil {
+				continue
+			}
+			t, perr := parseTime(fmt.Sprintf("%s: line %q: %s", where, line, d.field), *d.in)
+			if perr != nil {
+				return GitHubRepo{}, perr
+			}
+			*d.out = &t
+		}
+		r.Lines[line] = l
+	}
+	return r, nil
 }
 
 // validate checks what the JSON form cannot express: the schema, and
@@ -475,6 +600,9 @@ func (s *Snapshot) validate() error {
 			}
 		}
 	}
+	if err := s.validateGitHub(); err != nil {
+		return err
+	}
 	if s.RustChannel != nil && s.RustChannel.Version == "" {
 		return errors.New("snapshot: rust_channel: empty version")
 	}
@@ -486,6 +614,23 @@ func (s *Snapshot) validate() error {
 			}
 			if i > 0 && release.CompareLines(lines[i-1], l) == 0 {
 				return fmt.Errorf("snapshot: adoptium: duplicate line %q", l)
+			}
+		}
+	}
+	return nil
+}
+
+// validateGitHub checks that every line of every repository's GitHub
+// releases is named and has a newest release.
+func (s *Snapshot) validateGitHub() error {
+	for _, repo := range slices.Sorted(maps.Keys(s.GitHubReleases)) {
+		for _, line := range slices.Sorted(maps.Keys(s.GitHubReleases[repo].Lines)) {
+			if line == "" {
+				return fmt.Errorf("snapshot: github_releases.%s: empty line", repo)
+			}
+			l := s.GitHubReleases[repo].Lines[line]
+			if l.NewestStable == "" && l.NewestPrerelease == "" {
+				return fmt.Errorf("snapshot: github_releases.%s: line %q has neither newest_stable nor newest_prerelease", repo, line)
 			}
 		}
 	}
@@ -587,6 +732,14 @@ func formatDate(t *time.Time) *string {
 
 func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
+}
+
+func formatTimePtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := formatTime(*t)
+	return &s
 }
 
 // parseTime parses an RFC 3339 timestamp in UTC with no fractional

@@ -82,8 +82,9 @@ type StaticLine struct {
 	Released string `json:"released,omitempty"`
 	// EOL is the end-of-life date, YYYY-MM-DD.
 	EOL string `json:"eol,omitempty"`
-	// LTS marks a long-term support line.
-	LTS bool `json:"lts,omitempty"`
+	// LTS marks a long-term support line; nil when the catalog omits
+	// it, so that a later source can supply it.
+	LTS *bool `json:"lts,omitempty"`
 }
 
 // Constraints describes how projects declare a version constraint.

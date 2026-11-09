@@ -16,6 +16,7 @@ import (
 
 	"github.com/lfreleng-actions/supported-versions-action/pkg/cache"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/catalog"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/versions"
 )
 
@@ -118,6 +119,8 @@ func (e *env) resolve(g *globals, fn func(*versions.Resolver) (versions.Report, 
 		MavenBaseURL:     e.hooks.mavenBaseURL,
 		GradleBaseURL:    e.hooks.gradleBaseURL,
 		RustBaseURL:      e.hooks.rustBaseURL,
+		GitHubBaseURL:    e.hooks.githubBaseURL,
+		GitHubToken:      e.getenv(githubreleases.TokenEnv),
 	}
 	if g.policy != "" {
 		if opts.Overlay, err = catalog.LoadOverlay(g.policy); err != nil {

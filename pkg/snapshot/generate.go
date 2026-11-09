@@ -16,22 +16,25 @@ import (
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/actionsmanifest"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/adoptium"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/endoflife"
+	"github.com/lfreleng-actions/supported-versions-action/pkg/source/githubreleases"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/gradleservices"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/mavenmeta"
 	"github.com/lfreleng-actions/supported-versions-action/pkg/source/rustchannel"
 )
 
 // Generate fetches every endoflife, actions-manifest, adoptium,
-// maven-metadata, gradle-services and rust-channel source of the
-// catalog's tools, in
-// cat.IDs() order, and returns their snapshot. Manifests, Maven
-// metadata and Gradle versions are reduced to lines under the version
-// scheme of the first tool naming them, and endoflife products keep
-// only the lines valid under it. A source two tools share is fetched once. Other
-// source types are skipped. Any fetch error fails the whole generation,
-// so a partial snapshot is never returned. GeneratedAt is now(), or
+// maven-metadata, gradle-services, rust-channel and github-releases
+// source of the catalog's tools, in cat.IDs() order, and returns their
+// snapshot. Manifests, Maven metadata, Gradle versions and GitHub
+// releases are reduced to lines under the version scheme of the first
+// tool naming them, and endoflife products keep only the lines valid
+// under it. A source two tools share is fetched once, and every GitHub
+// repository is read in one query, made only when the catalog names
+// one. Other source types, such as static, are skipped. Any fetch
+// error fails the whole generation, so a partial snapshot is never
+// returned. GeneratedAt is now(), or
 // time.Now when now is nil.
-func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, gradle *gradleservices.Client, rust *rustchannel.Client, now func() time.Time) (*Snapshot, error) {
+func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, manifests *actionsmanifest.Client, releases *adoptium.Client, maven *mavenmeta.Client, gradle *gradleservices.Client, rust *rustchannel.Client, gh *githubreleases.Client, now func() time.Time) (*Snapshot, error) {
 	if now == nil {
 		now = time.Now
 	}
@@ -116,8 +119,41 @@ func Generate(ctx context.Context, cat *catalog.Catalog, eol *endoflife.Client, 
 			}
 		}
 	}
+	if err := s.generateGitHub(ctx, cat, gh); err != nil {
+		return nil, err
+	}
 	s.GeneratedAt = stamp(now())
 	return s, nil
+}
+
+// generateGitHub reads the releases of every GitHub repository the
+// catalog names in one query and stores their lines under the version
+// scheme of the first tool, in cat.IDs() order, naming each. It makes
+// no request when the catalog names none.
+func (s *Snapshot) generateGitHub(ctx context.Context, cat *catalog.Catalog, gh *githubreleases.Client) error {
+	schemes := make(map[string]string)
+	for _, id := range cat.IDs() {
+		for _, src := range cat.Tools[id].Sources {
+			if _, done := schemes[src.Repository]; src.Type == TypeGitHubReleases && !done {
+				schemes[src.Repository] = cat.Tools[id].VersionScheme
+			}
+		}
+	}
+	if len(schemes) == 0 {
+		return nil
+	}
+	releases, res, err := gh.Releases(ctx, slices.Collect(maps.Keys(schemes)))
+	if err != nil {
+		return fmt.Errorf("snapshot: %w", err)
+	}
+	s.GitHubReleases = make(map[string]GitHubRepo, len(schemes))
+	for repo, scheme := range schemes {
+		s.GitHubReleases[repo] = GitHubRepo{
+			FetchedAt: stamp(res.FetchedAt),
+			Lines:     githubreleases.Lines(releases[repo], scheme),
+		}
+	}
+	return nil
 }
 
 // mavenLines maps Maven versions to their lines under scheme, in the
@@ -132,7 +168,8 @@ func mavenLines(versions []string, scheme string) map[string]actionsmanifest.Lin
 
 // Check reports, together, every way the snapshot and the catalog
 // disagree: an endoflife, actions-manifest, adoptium, maven-metadata,
-// gradle-services or rust-channel source of the catalog with no entry,
+// gradle-services, rust-channel or github-releases source of the
+// catalog with no entry,
 // an entry for a source the catalog no longer names, and a line or
 // release that is not valid under the version scheme of a tool using
 // the source.
@@ -140,6 +177,7 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	products := make(map[string][]string)
 	repos := make(map[string][]string)
 	artifacts := make(map[string][]string)
+	ghRepos := make(map[string][]string)
 	var adoptiumSchemes, gradleSchemes, rustSchemes []string
 	for _, id := range cat.IDs() {
 		tool := cat.Tools[id]
@@ -157,6 +195,8 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 				rustSchemes = append(rustSchemes, tool.VersionScheme)
 			case TypeMavenMetadata:
 				artifacts[src.Artifact] = append(artifacts[src.Artifact], tool.VersionScheme)
+			case TypeGitHubReleases:
+				ghRepos[src.Repository] = append(ghRepos[src.Repository], tool.VersionScheme)
 			}
 		}
 	}
@@ -173,6 +213,7 @@ func (s *Snapshot) Check(cat *catalog.Catalog) error {
 	}
 	errs = checkManifests(errs, "actions-manifest repository", repos, s.ActionsManifest)
 	errs = checkManifests(errs, "maven-metadata artifact", artifacts, s.MavenMetadata)
+	errs = checkManifests(errs, "github-releases repository", ghRepos, s.GitHubReleases)
 	var adoptiumLines, gradleLines []string
 	if s.Adoptium != nil {
 		adoptiumLines = s.Adoptium.Lines
@@ -234,14 +275,14 @@ func (s *Snapshot) checkRustChannel(errs []error, schemes []string) []error {
 // lacks, each line of an entry that is not valid under the schemes
 // want gives it, and each entry of have that want does not name. kind
 // describes a name, such as "actions-manifest repository".
-func checkManifests(errs []error, kind string, want map[string][]string, have map[string]Manifest) []error {
+func checkManifests[M lined](errs []error, kind string, want map[string][]string, have map[string]M) []error {
 	for _, name := range slices.Sorted(maps.Keys(want)) {
 		m, ok := have[name]
 		if !ok {
 			errs = append(errs, fmt.Errorf("snapshot: %s %q is missing", kind, name))
 			continue
 		}
-		for _, line := range slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines) {
+		for _, line := range m.lineNames() {
 			errs = appendInvalidLine(errs, kind+" "+name, line, want[name])
 		}
 	}
@@ -251,6 +292,21 @@ func checkManifests(errs []error, kind string, want map[string][]string, have ma
 		}
 	}
 	return errs
+}
+
+// lined is a snapshot entry holding release lines.
+type lined interface {
+	lineNames() []string
+}
+
+// lineNames returns the manifest's lines in ascending line order.
+func (m Manifest) lineNames() []string {
+	return slices.SortedFunc(maps.Keys(m.Lines), release.CompareLines)
+}
+
+// lineNames returns the repository's lines in ascending line order.
+func (r GitHubRepo) lineNames() []string {
+	return slices.SortedFunc(maps.Keys(r.Lines), release.CompareLines)
 }
 
 // appendInvalidLine appends an error when line is not valid under
