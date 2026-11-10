@@ -27,7 +27,7 @@ jobs:
       contents: read
       pull-requests: read  # repository-metadata-action reads PR data
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/go-workflows/.github/workflows/build-test.yaml@30c99fc8a00906d80a65800e6233088811e72982  # v0.6.7
+    uses: lfreleng-actions/go-workflows/.github/workflows/build-test.yaml@f474e6d3db395b6b7e8ef522f5391b4a47089060  # v0.7.1
     with:
       lint_version: 'v2.15.0'  # the version this repository already uses
 
