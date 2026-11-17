@@ -83,7 +83,7 @@ jobs:
 
       - name: "Run Go tests"
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/go-test-action@b609109b7be8a2bf957b47600211f35bed1c8301  # v0.1.4
+        uses: lfreleng-actions/go-test-action@7f0e97f383e815583e490715ab62a959c484d85e  # v0.1.5
         with:
           go_version_file: 'go.mod'
           race: true
